@@ -1,0 +1,8 @@
+fastapi
+uvicorn[standard]
+streamlit
+python-docx
+openai
+python-dotenv
+requests
+aiofiles  # For async file operations with FastAPI
