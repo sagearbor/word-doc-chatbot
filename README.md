@@ -48,6 +48,7 @@ the specific edits, which are then applied by a Python script.
     ```
     OPENAI_API_KEY="your_openai_api_key_here"
     ```
+    **Important**: Ensure that your `.env` file is not committed to version control. It should be listed in your `.gitignore` file.
     Alternatively, you can set it as an environment variable.
 
 ### Running the Application

@@ -1,8 +1,13 @@
 import os
 import json
+import re # Added import for re
 from openai import OpenAI
 from dotenv import load_dotenv
 from typing import List, Dict, Optional
+
+# Define custom exception
+class OpenAIKeyMissingError(Exception):
+    pass
 
 # Load environment variables from .env file (especially OPENAI_API_KEY)
 # This is useful for local development. In production, prefer environment variables.
@@ -12,13 +17,13 @@ if os.path.exists(dotenv_path):
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
-if not OPENAI_API_KEY:
-    print("Warning: OPENAI_API_KEY not found in environment variables or .env file.")
-    # Potentially raise an error or handle this case as per your application's needs
-    # For now, it will fail when trying to initialize OpenAI client without a key.
+client = None # Initialize client to None first
 
-client = None
-if OPENAI_API_KEY:
+if not OPENAI_API_KEY:
+    # Instead of just printing, raise the custom error
+    raise OpenAIKeyMissingError("OPENAI_API_KEY not found. Please set it in backend/.env or as an environment variable.")
+else:
+    # Initialize client only if key exists
     client = OpenAI(api_key=OPENAI_API_KEY)
 
 def get_llm_suggestions(document_text: str, user_instructions: str, filename: str) -> Optional[List[Dict]]:
@@ -46,8 +51,8 @@ def get_llm_suggestions(document_text: str, user_instructions: str, filename: st
                               ]
     """
     if not client:
-        print("OpenAI client not initialized. Please set OPENAI_API_KEY.")
-        return None
+        # Raise custom error if client is not initialized
+        raise OpenAIKeyMissingError("OpenAI client not initialized, likely due to a missing or invalid API key.")
 
     # Truncate document_text if it's too long to avoid excessive token usage/cost
     # Max tokens for gpt-3.5-turbo is around 4096 (prompt + completion)
@@ -164,6 +169,8 @@ Provide only the JSON output. Do not include any other text or explanations outs
             print(f"Error decoding JSON from LLM response: {e}")
             print(f"Problematic response content: {response_content}")
             # Attempt to extract JSON list if it's embedded in text
+            # Ensure re is imported. It was missing in the original provided snippet.
+            # Added import re at the top of the file.
             match = re.search(r'\[\s*(\{.*?\}\s*(,\s*\{.*?\})*\s*)?\]', response_content, re.DOTALL)
             if match:
                 json_like_part = match.group(0)

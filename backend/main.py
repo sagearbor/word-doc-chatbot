@@ -12,7 +12,7 @@ import python_docx_oss_block_patches # Important for python-docx on some systems
 
 from docx import Document as DocxReader # To read text from docx
 
-from .llm_handler import get_llm_suggestions
+from .llm_handler import get_llm_suggestions, OpenAIKeyMissingError # Import the custom exception
 from .word_processor import process_document_with_edits # Ensure this import is correct
 
 app = FastAPI(title="Word Document Processing API")
@@ -137,9 +137,20 @@ async def process_document_endpoint(
                 print(f"Could not read log file {error_log_file_path}: {e_log}")
                 error_log_content = f"Log file was generated ({log_filename}) but could not be read by the server."
         elif processing_log_details: # If no log file, but details exist (e.g. successful processing but with warnings)
-            error_log_content = "Processing completed. Review of changes and potential issues:\n"
+            error_log_content = "Processing Notes and Changes Not Applied:\n\n"
             for entry in processing_log_details:
-                 error_log_content += f"- {entry.get('issue', 'N/A')} (Context: {entry.get('contextual_old_text', 'N/A')[:30]}...)\n"
+                error_log_content += f"--- Entry ---\n"
+                error_log_content += f"  Paragraph Index: {entry.get('paragraph_index', 'N/A')}\n"
+                error_log_content += f"  Issue: {entry.get('issue', 'N/A')}\n"
+                error_log_content += f"  Context Searched: '{entry.get('contextual_old_text', '')}'\n"
+                error_log_content += f"  Specific Old Text: '{entry.get('specific_old_text', '')}'\n"
+                # llm_reason might be under 'reason_for_change' from the LLM or 'llm_reason' if added by word_processor
+                llm_reason = entry.get('llm_reason', entry.get('reason_for_change', 'N/A'))
+                error_log_content += f"  LLM Reason: {llm_reason}\n"
+                if entry.get('type') == "Warning": # Assuming 'type' field might exist
+                    error_log_content += f"  Type: Warning\n"
+                error_log_content += "\n" # Add a blank line for separation before the next entry
+            error_log_content += "-----------------------------------------\n"
         else:
             error_log_content = "Processing completed successfully with no specific issues logged by word_processor."
 
@@ -156,6 +167,9 @@ async def process_document_endpoint(
 
     except HTTPException as http_exc: # Re-raise HTTPExceptions
         raise http_exc
+    except OpenAIKeyMissingError as e:
+        print(f"OpenAI API Key Configuration Error: {e}")
+        raise HTTPException(status_code=400, detail=f"Configuration Error: {str(e)} Please ensure your OpenAI API key is correctly set up.")
     except Exception as e:
         print(f"An unexpected error occurred during processing: {e}")
         # Log the full traceback for debugging on the server

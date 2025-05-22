@@ -1,0 +1,109 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+#  Usually these files are written by a script go in build/ and dist/
+#  but can be written in ".spec"
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Spyder project settings
+.spyderproject
+.spyproject
+
+# Rope project settings
+.ropeproject
+
+# mkdocs documentation
+/site
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# VS Code
+.vscode/
+
+# Temporary files
+*.tmp
+*~
+*.swp
+*.swo
+
+# OS-generated files
+.DS_Store
+Thumbs.db
+
+# Uploads and outputs from this app (if stored locally and not versioned)
+# Adjust if your app stores files elsewhere that shouldn't be versioned.
+backend/TEMP_DIR/ 
+# If TEMP_DIR is outside backend, adjust path e.g. /TEMP_DIR/ if it's at root
+# The current code uses tempfile.mkdtemp which might be system-wide /tmp
+# If so, this rule might not be strictly necessary as /tmp is usually not in a repo.
+# However, if TEMP_DIR were configured to be within the project, this would be important.
+# For now, let's assume it could be created inside `backend` if not system default.
+
+# Specific to this project:
+backend/.env 
+frontend/.env # If frontend ever uses one
+
+# Change logs if they are considered build artifacts not source
+# *.log (This might be too broad, but consider if change_log*.txt should be ignored)
+# For now, let's be specific if we want to ignore them:
+# backend/change_log*.txt

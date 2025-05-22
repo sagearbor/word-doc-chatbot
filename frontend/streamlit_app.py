@@ -32,22 +32,43 @@ if 'processing' not in st.session_state:
 
 with st.sidebar:
     st.header("⚙️ Options")
-    uploaded_file = st.file_uploader("1. Upload your .docx file", type=["docx"], key="file_uploader")
+    uploaded_file = st.file_uploader(
+        "1. Upload your .docx file", 
+        type=["docx"], 
+        key="file_uploader", 
+        disabled=st.session_state.processing
+    )
     
     st.subheader("Author for Changes (Optional)")
-    author_name_llm = st.text_input("Name to appear for LLM's changes:", value="AI Reviewer", help="This name will be used as the author for the tracked changes made by the LLM.")
+    author_name_llm = st.text_input(
+        "Name to appear for LLM's changes:", 
+        value="AI Reviewer", 
+        help="This name will be used as the author for the tracked changes made by the LLM.",
+        disabled=st.session_state.processing
+    )
 
     st.subheader("Search Settings")
-    case_sensitive_search = st.checkbox("Case-sensitive search for text to change", value=True, help="If checked, 'Text' and 'text' are treated as different. If unchecked, they are treated the same.")
+    case_sensitive_search = st.checkbox(
+        "Case-sensitive search for text to change", 
+        value=True, 
+        help="If checked, 'Text' and 'text' are treated as different. If unchecked, they are treated the same.",
+        disabled=st.session_state.processing
+    )
     
     st.subheader("Tracked Changes Settings")
-    add_comments_to_changes = st.checkbox("Add comments to changes", value=True, help="If checked, the LLM's reason for change will be added as a comment to the tracked change.")
+    add_comments_to_changes = st.checkbox(
+        "Add comments to changes", 
+        value=True, 
+        help="If checked, the LLM's reason for change will be added as a comment to the tracked change.",
+        disabled=st.session_state.processing
+    )
 
 
 user_instructions = st.text_area(
     "2. Describe the checks or changes you want (e.g., 'Ensure all deadlines are after May 5th, 2024. Correct spelling of Contoso Ltd to Contoso Inc.')",
     height=150,
-    key="instructions_area"
+    key="instructions_area",
+    disabled=st.session_state.processing
 )
 
 if st.button("✨ Process Document", type="primary", disabled=st.session_state.processing):
@@ -72,11 +93,15 @@ if st.button("✨ Process Document", type="primary", disabled=st.session_state.p
                 response.raise_for_status()  # Raises an HTTPError for bad responses (4XX or 5XX)
                 
                 result = response.json()
+                backend_message = result.get("message") # Get backend message
                 st.session_state.processed_filename = result.get("processed_filename")
                 st.session_state.processed_file_url = f"{DOWNLOAD_ENDPOINT_PREFIX}/{st.session_state.processed_filename}" if st.session_state.processed_filename else None
                 st.session_state.log_content = result.get("log_content", "No log content received.")
                 
-                st.success("Document processing complete!")
+                if backend_message and "LLM suggested no changes" in backend_message:
+                    st.info(backend_message) # Use st.info for this specific message
+                else:
+                    st.success("Document processing complete!") # Default success message
 
             except requests.exceptions.HTTPError as errh:
                 st.session_state.error_message = f"Http Error: {errh.response.status_code} {errh.response.reason}"
