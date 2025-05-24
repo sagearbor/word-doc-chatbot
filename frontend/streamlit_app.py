@@ -1,13 +1,17 @@
-import streamlit as st
-import requests
 import os
-import time # For polling if needed, or just for unique keys
+import requests
+import streamlit as st
 
 # Configuration for the FastAPI backend URL
+# Use the BACKEND_URL environment variable when provided so the
+# frontend can talk to a remote API (e.g. on Azure or Render).
+# Default to the local development server.
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
+BACKEND_URL = BACKEND_URL.rstrip("/")
 PROCESS_ENDPOINT = f"{BACKEND_URL}/process-document/"
 DOWNLOAD_ENDPOINT_PREFIX = f"{BACKEND_URL}/download" # No trailing slash
 ANALYZE_ENDPOINT = f"{BACKEND_URL}/analyze-document/"
+
 
 st.set_page_config(layout="wide", page_title="Word Document Editor")
 
@@ -169,12 +173,52 @@ if st.session_state.processed_file_url and st.session_state.processed_filename a
         # Provide a direct link as a fallback
         st.markdown(f"Alternatively, try to download directly: [{st.session_state.processed_filename}]({st.session_state.processed_file_url})")
 
+st.set_page_config(page_title="Word Doc Chatbot")
+st.title("📄 Word Document Chatbot")
 
-if st.session_state.log_content and not st.session_state.processing:
-    st.markdown("---")
-    st.subheader("📝 Processing Log")
-    with st.expander("View Log Details", expanded=False):
-        st.text_area("Log:", value=st.session_state.log_content, height=300, disabled=True, key="log_display_area")
+if "messages" not in st.session_state:
+    st.session_state.messages = []
 
-st.markdown("---")
-st.caption("Developed with Streamlit, FastAPI, and OpenAI.")
+uploaded_file = st.sidebar.file_uploader("Upload a .docx file", type=["docx"])
+author = st.sidebar.text_input("Author for tracked changes", "AI Reviewer")
+case_sensitive = st.sidebar.checkbox("Case sensitive search", True)
+add_comments = st.sidebar.checkbox("Add comments", True)
+
+# Display chat history
+for m in st.session_state.messages:
+    with st.chat_message(m["role"]):
+        st.markdown(m["content"])
+
+prompt = st.chat_input("Enter instructions and press Enter")
+if prompt:
+    if uploaded_file is None:
+        st.warning("Please upload a document before sending instructions.")
+    else:
+        st.session_state.messages.append({"role": "user", "content": prompt})
+        with st.chat_message("user"):
+            st.markdown(prompt)
+
+        files = {"file": (uploaded_file.name, uploaded_file.getvalue(), uploaded_file.type)}
+        data = {
+            "instructions": prompt,
+            "author_name": author,
+            "case_sensitive": str(case_sensitive).lower(),
+            "add_comments": str(add_comments).lower(),
+        }
+        try:
+            resp = requests.post(f"{BACKEND_URL}/process-document/", files=files, data=data)
+            resp.raise_for_status()
+            result = resp.json()
+            download_url = result.get("download_url")
+            reply = "Document processed."
+            if download_url:
+                reply += f" [Download here]({download_url})"
+            if result.get("log_content"):
+                reply += "\n\n" + result["log_content"]
+        except Exception as e:
+            reply = f"Failed to process document: {e}"
+
+        st.session_state.messages.append({"role": "assistant", "content": reply})
+        with st.chat_message("assistant"):
+            st.markdown(reply)
+

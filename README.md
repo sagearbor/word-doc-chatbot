@@ -1,9 +1,24 @@
 # Word Document Tracked Changes Chatbot
 
-This application allows users to upload a Word document, provide instructions for changes,
-and receive a new Word document with those changes applied as tracked revisions.
-The application uses an LLM (OpenAI GPT) to interpret the instructions and generate
-the specific edits, which are then applied by a Python script.
+This project provides a small demo showing how a Word document can be updated with tracked changes suggested by an LLM.  A FastAPI service receives a DOCX file and a text prompt, asks the LLM for edit instructions and then applies those edits with `word_processor.py`.  A simple Streamlit front end lets you upload the file and chat with the backend.
+
+## Running
+
+1. Install the requirements
+   ```bash
+   pip install -r requirements.txt
+   ```
+2. (Optional) create `backend/.env` containing your `OPENAI_API_KEY`.
+3. Start the backend
+   ```bash
+   uvicorn backend.main:app --reload
+   ```
+4. In another terminal start the Streamlit app
+   ```bash
+   streamlit run frontend/streamlit_app.py
+   ```
+
+Open the URL shown by Streamlit and upload a `.docx` file. Type instructions in the chat box and a download link for the edited document will appear in the assistant response.
 
 ## Project Structure
 
@@ -66,6 +81,19 @@ the specific edits, which are then applied by a Python script.
 
 Open your browser and go to the URL provided by Streamlit (usually `http://localhost:8501`).
 
+### Configuring the Backend URL
+
+The frontend looks for a `BACKEND_URL` environment variable to know where the FastAPI service is running. If this variable is not set, it defaults to `http://localhost:8000`. When deploying the backend to a different host (for example on Azure), set this variable before starting Streamlit:
+
+```bash
+export BACKEND_URL="https://your-backend.example.com"
+streamlit run streamlit_app.py
+```
+
+### Local Testing
+
+With the backend running on `http://localhost:8000` and the frontend started as shown above (without setting `BACKEND_URL`), you can test the application locally by visiting `http://localhost:8501` in your browser and uploading a `.docx` file.
+
 ## How it Works
 
 1.  The user uploads a `.docx` file and types a description of the desired checks/changes in the Streamlit UI.
@@ -92,3 +120,4 @@ The LLM is prompted to return a JSON list of objects, where each object has the 
     "reason_for_change": "A brief explanation from the LLM why this change is being made."
   }
 ]
+
