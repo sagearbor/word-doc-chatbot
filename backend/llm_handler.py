@@ -4,40 +4,30 @@ from typing import List, Dict, Optional
 
 from dotenv import load_dotenv
 from openai import OpenAI
-# Load environment variables from .env file (especially OPENAI_API_KEY)
-# This is useful for local development. In production, prefer environment variables.
+
+# Load environment variables from .env if present
 dotenv_path = os.path.join(os.path.dirname(__file__), '.env')
 if os.path.exists(dotenv_path):
     load_dotenv(dotenv_path)
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-
 if not OPENAI_API_KEY:
     print("Warning: OPENAI_API_KEY not found in environment variables or .env file.")
-    # Potentially raise an error or handle this case as per your application's needs
-    # For now, it will fail when trying to initialize OpenAI client without a key.
 
-client = None
+client: Optional[OpenAI] = None
 if OPENAI_API_KEY:
     client = OpenAI(api_key=OPENAI_API_KEY)
 
 
 def get_llm_analysis(document_text: str, filename: str) -> Optional[str]:
-    """Ask the LLM to analyze the document and suggest improvements.
-
-    The response should be a short, numbered list describing areas that could be
-    improved and offering guidance on how the user might instruct the LLM to
-    modify the document for mutually beneficial outcomes.
-    """
+    """Ask the LLM to analyze the document and suggest improvements."""
     if not client:
         print("OpenAI client not initialized. Please set OPENAI_API_KEY.")
         return None
 
-    max_doc_text_length = 8000
-    if len(document_text) > max_doc_text_length:
-        document_text_snippet = document_text[:max_doc_text_length] + "\n... [document truncated] ..."
-    else:
-        document_text_snippet = document_text
+    snippet = document_text[:8000]
+    if len(document_text) > 8000:
+        snippet += "\n... [document truncated] ..."
 
     prompt = f"""
       You are an expert editor reviewing the Word document '{filename}'.
@@ -48,71 +38,32 @@ def get_llm_analysis(document_text: str, filename: str) -> Optional[str]:
 
       Document text (snippet if long):
       ---
-      {document_text_snippet}
+      {snippet}
       ---
       Return only the numbered list of recommendations in plain text.
       """
-
     try:
         chat_completion = client.chat.completions.create(
             messages=[
-                {
-                    "role": "system",
-                    "content": "You analyze documents and propose improvements in a concise numbered list."
-                },
+                {"role": "system", "content": "You analyze documents and propose improvements in a concise numbered list."},
                 {"role": "user", "content": prompt},
             ],
             model="gpt-3.5-turbo-0125",
             temperature=0.3,
         )
-
-        response_content = chat_completion.choices[0].message.content
-        print(f"LLM Analysis Response: {response_content}")
-        return response_content
+        return chat_completion.choices[0].message.content
     except Exception as e:
         print(f"An error occurred while calling OpenAI for analysis: {e}")
         return None
 
-def get_llm_suggestions(document_text: str, user_instructions: str, filename: str) -> Optional[List[Dict]]:
-    """
-    <<<<<<< codex/review-and-improve-environment-based-url-handling
-    Your task is to identify specific changes to be made to the document.
-    For each change, you MUST provide:
-    1.  `contextual_old_text`: A short piece of surrounding text from the original document that uniquely identifies the location of the change. This context should be distinctive enough for a program to find it. It should include the `specific_old_text`.
-    2.  `specific_old_text`: The exact text that needs to be replaced or deleted. This text MUST exist within the `contextual_old_text`.
-    3.  `specific_new_text`: The new text that should replace the `specific_old_text`. If the instruction is to delete text, provide an empty string "" for `specific_new_text`.
-    4.  `reason_for_change`: A brief explanation of why this change is being made, based on the user's instructions.
 
-    IMPORTANT:
-    - Ensure `specific_old_text` is an exact substring of `contextual_old_text`.
-      - If no changes are needed based on the instructions, return an empty JSON list: [].
-    - If the instructions are unclear or cannot be mapped to specific text changes, return an empty JSON list.
-    - Pay close attention to preserving the original casing in `contextual_old_text` and `specific_old_text` as found in the document.
-      - The `specific_new_text` should be what the user intends, including its casing.
-
-    Return your response as a JSON list of objects, where each object represents one change.
-      Example:
-      [
-        {{
-          "contextual_old_text": "The deadline for submission is May 1st, 2024, and all entries must comply.",
-          "specific_old_text": "May 1st, 2024",
-          "specific_new_text": "June 5th, 2025",
-          "reason_for_change": "Updated deadline as per user instruction to ensure deadlines are not before May 5th (example of a correction)."
-        }},
-        {{
-          "contextual_old_text": "We need to complete the task very fast.",
-          "specific_old_text": "very fast",
-          "specific_new_text": "quickly",
-          "reason_for_change": "Improved conciseness."
-        }}
-      ] 
-    """ 
+def _parse_llm_response(content: str) -> Optional[List[Dict]]:
+    """Parse the JSON list returned by the LLM."""
     try:
         data = json.loads(content)
         if isinstance(data, list):
             return data
         if isinstance(data, dict):
-            # Some models may wrap the list under a key like "edits"
             for val in data.values():
                 if isinstance(val, list):
                     return val
@@ -120,11 +71,11 @@ def get_llm_suggestions(document_text: str, user_instructions: str, filename: st
         print(f"Could not decode JSON from LLM response: {exc}\nContent: {content}")
     return None
 
+
 def get_llm_suggestions(document_text: str, user_instructions: str, filename: str) -> Optional[List[Dict]]:
     """Return a list of edit instructions for word_processor."""
     if not client:
-        # When no API key is configured we simply return an empty list so the
-        # rest of the pipeline can still run during local testing.
+        # Allow local testing without an API key
         print("OpenAI API key not configured - returning no suggestions.")
         return []
 
@@ -154,25 +105,9 @@ def get_llm_suggestions(document_text: str, user_instructions: str, filename: st
         return None
     return edits
 
-# Keep the detailed logging from your branch (it's useful for debugging)
-if suggestions is not None:
-    print("\n--- LLM Suggestions Received ---")
-    if suggestions:
-        for i, suggestion in enumerate(suggestions):
-            print(f"\nSuggestion {i+1}:")
-            print(f"  Context: '{suggestion.get('contextual_old_text')}'")
-            print(f"  Old Text: '{suggestion.get('specific_old_text')}'")
-            print(f"  New Text: '{suggestion.get('specific_new_text')}'")
-            print(f"  Reason: '{suggestion.get('reason_for_change')}'")
-    else:
-        print("No suggestions were generated by the LLM (empty list returned).")
-else:
-    print("\n--- Failed to get suggestions from LLM ---")
 
-# And add the test code from main (but fix the syntax error)
 if __name__ == "__main__":
     sample_doc = "The deliverable is due in three months."
     sample_inst = "Ensure deliverables are not due in less than six months."
     suggestions = get_llm_suggestions(sample_doc, sample_inst, "sample.docx")
     print(json.dumps(suggestions, indent=2))
-    

@@ -35,7 +35,7 @@ async def analyze_document_endpoint(file: UploadFile = File(...)):
         with open(input_docx_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
 
-        document_text = get_document_text(input_docx_path)
+        document_text = extract_text(input_docx_path)
         analysis = get_llm_analysis(document_text, original_filename)
 
         if analysis is None:
