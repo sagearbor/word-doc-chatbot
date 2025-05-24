@@ -4,9 +4,13 @@ import os
 import time # For polling if needed, or just for unique keys
 
 # Configuration for the FastAPI backend URL
+# Use the BACKEND_URL environment variable when provided so the
+# frontend can talk to a remote API (e.g. on Azure or Render).
+# Default to the local development server.
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
+BACKEND_URL = BACKEND_URL.rstrip("/")
 PROCESS_ENDPOINT = f"{BACKEND_URL}/process-document/"
-DOWNLOAD_ENDPOINT_PREFIX = f"{BACKEND_URL}/download" # No trailing slash
+DOWNLOAD_ENDPOINT_PREFIX = f"{BACKEND_URL}/download"  # No trailing slash
 
 st.set_page_config(layout="wide", page_title="Word Document Editor")
 

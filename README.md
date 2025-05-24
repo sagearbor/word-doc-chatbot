@@ -66,6 +66,19 @@ the specific edits, which are then applied by a Python script.
 
 Open your browser and go to the URL provided by Streamlit (usually `http://localhost:8501`).
 
+### Configuring the Backend URL
+
+The frontend looks for a `BACKEND_URL` environment variable to know where the FastAPI service is running. If this variable is not set, it defaults to `http://localhost:8000`. When deploying the backend to a different host (for example on Azure), set this variable before starting Streamlit:
+
+```bash
+export BACKEND_URL="https://your-backend.example.com"
+streamlit run streamlit_app.py
+```
+
+### Local Testing
+
+With the backend running on `http://localhost:8000` and the frontend started as shown above (without setting `BACKEND_URL`), you can test the application locally by visiting `http://localhost:8501` in your browser and uploading a `.docx` file.
+
 ## How it Works
 
 1.  The user uploads a `.docx` file and types a description of the desired checks/changes in the Streamlit UI.
