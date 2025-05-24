@@ -69,6 +69,9 @@ Open your browser and go to the URL provided by Streamlit (usually `http://local
 ## How it Works
 
 1.  The user uploads a `.docx` file and types a description of the desired checks/changes in the Streamlit UI.
+    Users can optionally click **Analyze Document for Suggestions** to have the LLM
+    provide a short numbered summary of potential improvements before giving
+    editing instructions.
 2.  Streamlit sends this data to the FastAPI backend.
 3.  The backend calls the OpenAI API (`llm_handler.py`) with the document content (or a summary) and the user's instructions. It requests OpenAI to return a list of specific text changes in a predefined JSON format.
 4.  The LLM's JSON response is then passed to the `word_processor.py` script along with the original Word document.
