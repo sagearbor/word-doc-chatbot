@@ -173,8 +173,7 @@ if st.session_state.processed_file_url and st.session_state.processed_filename a
         # Provide a direct link as a fallback
         st.markdown(f"Alternatively, try to download directly: [{st.session_state.processed_filename}]({st.session_state.processed_file_url})")
 
-st.set_page_config(page_title="Word Doc Chatbot")
-st.title("📄 Word Document Chatbot")
+
 
 if "messages" not in st.session_state:
     st.session_state.messages = []

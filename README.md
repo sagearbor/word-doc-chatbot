@@ -28,9 +28,7 @@ Open the URL shown by Streamlit and upload a `.docx` file. Type instructions in 
   - `word_processor.py`: Core script for manipulating Word documents.
 - `frontend/`: Contains the Streamlit frontend application.
   - `streamlit_app.py`: The user interface.
-- `.gitignore`: Specifies intentionally untracked files that Git should ignore.
 - `requirements.txt`: Lists the Python dependencies for the project.
-- `Dockerfile`: For building a Docker container (optional).
 
 ## Setup and Running
 
