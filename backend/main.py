@@ -8,8 +8,9 @@ from fastapi import FastAPI, File, UploadFile, Form, HTTPException
 from fastapi.responses import FileResponse, JSONResponse
 from docx import Document
 
-from .llm_handler import get_llm_suggestions
-from .word_processor import process_document_with_edits
+from .llm_handler import get_llm_suggestions, get_llm_analysis
+from .word_processor import process_document_with_edits # Ensure this import is correct
+
 
 app = FastAPI(title="Word Document Processing API")
 TEMP_DIR = tempfile.mkdtemp(prefix="wordapp_")
@@ -18,6 +19,35 @@ TEMP_DIR = tempfile.mkdtemp(prefix="wordapp_")
 def extract_text(path: str) -> str:
     doc = Document(path)
     return "\n".join(p.text for p in doc.paragraphs)
+
+
+@app.post("/analyze-document/")
+async def analyze_document_endpoint(file: UploadFile = File(...)):
+    """Analyze a DOCX file and return LLM recommendations."""
+    if not file.filename.endswith(".docx"):
+        raise HTTPException(status_code=400, detail="Invalid file type. Only .docx files are accepted.")
+
+    request_id = str(uuid.uuid4())
+    original_filename = file.filename
+    input_docx_path = os.path.join(TEMP_DIR, f"{request_id}_analysis_{original_filename}")
+
+    try:
+        with open(input_docx_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+
+        document_text = get_document_text(input_docx_path)
+        analysis = get_llm_analysis(document_text, original_filename)
+
+        if analysis is None:
+            raise HTTPException(status_code=500, detail="Failed to get analysis from LLM.")
+
+        return JSONResponse(content={"analysis": analysis})
+    finally:
+        if os.path.exists(input_docx_path):
+            try:
+                os.remove(input_docx_path)
+            except Exception as e_clean:
+                print(f"Error cleaning up analysis file {input_docx_path}: {e_clean}")
 
 
 @app.post("/process-document/")

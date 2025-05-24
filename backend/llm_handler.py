@@ -20,9 +20,60 @@ if not OPENAI_API_KEY:
 client = None
 if OPENAI_API_KEY:
     client = OpenAI(api_key=OPENAI_API_KEY)
-   
-def _parse_llm_response(content: str) -> Optional[List[Dict]]:
-    """Parse the JSON list returned by the LLM."""    
+
+
+def get_llm_analysis(document_text: str, filename: str) -> Optional[str]:
+    """Ask the LLM to analyze the document and suggest improvements.
+
+    The response should be a short, numbered list describing areas that could be
+    improved and offering guidance on how the user might instruct the LLM to
+    modify the document for mutually beneficial outcomes.
+    """
+    if not client:
+        print("OpenAI client not initialized. Please set OPENAI_API_KEY.")
+        return None
+
+    max_doc_text_length = 8000
+    if len(document_text) > max_doc_text_length:
+        document_text_snippet = document_text[:max_doc_text_length] + "\n... [document truncated] ..."
+    else:
+        document_text_snippet = document_text
+
+    prompt = f"""
+      You are an expert editor reviewing the Word document '{filename}'.
+      Provide a concise numbered list summarizing potential improvements.
+      Focus on win-win modifications that would improve the document for all parties.
+      Suggest how the user might instruct an AI to implement these changes,
+      such as offering higher quality wording in exchange for additional budget.
+
+      Document text (snippet if long):
+      ---
+      {document_text_snippet}
+      ---
+      Return only the numbered list of recommendations in plain text.
+      """
+
+    try:
+        chat_completion = client.chat.completions.create(
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You analyze documents and propose improvements in a concise numbered list."
+                },
+                {"role": "user", "content": prompt},
+            ],
+            model="gpt-3.5-turbo-0125",
+            temperature=0.3,
+        )
+
+        response_content = chat_completion.choices[0].message.content
+        print(f"LLM Analysis Response: {response_content}")
+        return response_content
+    except Exception as e:
+        print(f"An error occurred while calling OpenAI for analysis: {e}")
+        return None
+
+def get_llm_suggestions(document_text: str, user_instructions: str, filename: str) -> Optional[List[Dict]]:
     """
     <<<<<<< codex/review-and-improve-environment-based-url-handling
     Your task is to identify specific changes to be made to the document.

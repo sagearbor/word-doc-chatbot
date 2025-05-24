@@ -9,7 +9,9 @@ import streamlit as st
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
 BACKEND_URL = BACKEND_URL.rstrip("/")
 PROCESS_ENDPOINT = f"{BACKEND_URL}/process-document/"
-DOWNLOAD_ENDPOINT_PREFIX = f"{BACKEND_URL}/download"  # No trailing slash
+DOWNLOAD_ENDPOINT_PREFIX = f"{BACKEND_URL}/download" # No trailing slash
+ANALYZE_ENDPOINT = f"{BACKEND_URL}/analyze-document/"
+
 
 st.set_page_config(layout="wide", page_title="Word Document Editor")
 
@@ -31,11 +33,36 @@ if 'error_message' not in st.session_state:
     st.session_state.error_message = None
 if 'processing' not in st.session_state:
     st.session_state.processing = False
+if 'analysis_content' not in st.session_state:
+    st.session_state.analysis_content = None
 
 
 with st.sidebar:
     st.header("⚙️ Options")
     uploaded_file = st.file_uploader("1. Upload your .docx file", type=["docx"], key="file_uploader")
+
+    if st.button("🔍 Analyze Document for Suggestions", disabled=st.session_state.processing):
+        if uploaded_file is not None:
+            st.session_state.processing = True
+            with st.spinner("Analyzing document with LLM..."):
+                files = {"file": (uploaded_file.name, uploaded_file.getvalue(), uploaded_file.type)}
+                try:
+                    response = requests.post(ANALYZE_ENDPOINT, files=files, timeout=300)
+                    response.raise_for_status()
+                    analysis_result = response.json().get("analysis", "No analysis returned.")
+                    st.session_state.analysis_content = analysis_result
+                    st.session_state.processed_file_url = None
+                    st.session_state.processed_filename = None
+                    st.session_state.log_content = None
+                    st.success("Analysis complete. See suggestions below.")
+                except Exception as e:
+                    st.session_state.error_message = f"Analysis failed: {e}"
+                    st.error(st.session_state.error_message)
+                finally:
+                    st.session_state.processing = False
+                    st.experimental_rerun()
+        else:
+            st.warning("Please upload a .docx file for analysis.")
     
     st.subheader("Author for Changes (Optional)")
     author_name_llm = st.text_input("Name to appear for LLM's changes:", value="AI Reviewer", help="This name will be used as the author for the tracked changes made by the LLM.")
@@ -53,6 +80,10 @@ user_instructions = st.text_area(
     key="instructions_area"
 )
 
+if st.session_state.analysis_content:
+    st.markdown("**LLM Suggested Improvements:**")
+    st.text_area("Suggestions", value=st.session_state.analysis_content, height=200, disabled=True)
+
 if st.button("✨ Process Document", type="primary", disabled=st.session_state.processing):
     if uploaded_file is not None and user_instructions:
         st.session_state.processing = True
@@ -60,6 +91,7 @@ if st.button("✨ Process Document", type="primary", disabled=st.session_state.p
         st.session_state.processed_filename = None
         st.session_state.log_content = None
         st.session_state.error_message = None
+        st.session_state.analysis_content = None
         
         with st.spinner("Processing your document... This may take a moment. Please wait."):
             files = {"file": (uploaded_file.name, uploaded_file.getvalue(), uploaded_file.type)}
