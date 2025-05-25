@@ -186,3 +186,5 @@ class AIProviderFactory:
 - Comprehensive logging for debugging
 - Security best practices (no secrets in code)
 - Cross-platform compatibility where possible
+### File Restrictions
+- Do not commit binary files (images, videos, .docx, .doc, .pdf, .exe).
