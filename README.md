@@ -92,6 +92,21 @@ streamlit run streamlit_app.py
 
 With the backend running on `http://localhost:8000` and the frontend started as shown above (without setting `BACKEND_URL`), you can test the application locally by visiting `http://localhost:8501` in your browser and uploading a `.docx` file.
 
+### Running on Azure
+
+To deploy the demo to Azure you will typically create two separate Web Apps (or container apps) - one for the FastAPI backend and one for the Streamlit frontend.
+
+1. **Backend**
+   - Deploy the code in the `backend/` directory to an Azure Web App.
+   - In the Azure portal, add an application setting named `OPENAI_API_KEY` containing your OpenAI key. The backend reads this value at startup.
+
+2. **Frontend**
+   - Deploy the contents of the `frontend/` directory to another Web App or to Azure Static Web Apps.
+   - Configure an application setting `BACKEND_URL` pointing to the public URL of the backend service (e.g. `https://<your-backend>.azurewebsites.net`).
+   - The Streamlit app will use this value to send requests to the backend.
+
+After both services are deployed and the environment variables are configured, navigate to the frontend's URL and use the app as you would locally.
+
 ## How it Works
 
 1.  The user uploads a `.docx` file and types a description of the desired checks/changes in the Streamlit UI.
