@@ -8,7 +8,8 @@ This project provides a small demo showing how a Word document can be updated wi
    ```bash
    pip install -r requirements.txt
    ```
-2. (Optional) create `backend/.env` containing your `OPENAI_API_KEY`.
+2. Copy `frontend/.env.example` to `frontend/.env` and (optionally) create
+   `backend/.env` containing your `OPENAI_API_KEY`.
 3. Start the backend
    ```bash
    uvicorn backend.main:app --reload
@@ -61,7 +62,9 @@ Open the URL shown by Streamlit and upload a `.docx` file. Type instructions in 
     ```
     OPENAI_API_KEY="your_openai_api_key_here"
     ```
-    Alternatively, you can set it as an environment variable.
+    Also copy `frontend/.env.example` to `frontend/.env` so Streamlit can read the same key.
+    These `.env` files are ignored by git and should not be committed.
+    Alternatively, you can set the variable in your shell environment.
 
 ### Running the Application
 
