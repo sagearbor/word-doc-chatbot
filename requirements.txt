@@ -3,6 +3,7 @@ uvicorn[standard]
 streamlit
 python-docx
 openai
-python-dotenv
+python-dotenv>=1.0.0
 requests
 aiofiles  # For async file operations with FastAPI
+litellm>=1.0.0
