@@ -1,7 +1,7 @@
 import os
 from typing import Optional, Dict, Any
 from litellm import completion
-from config import AIConfig
+from .config import AIConfig
 
 class UnifiedAIClient:
     """Unified client for multiple AI providers using LiteLLM."""

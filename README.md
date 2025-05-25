@@ -8,8 +8,9 @@ This project provides a small demo showing how a Word document can be updated wi
    ```bash
    pip install -r requirements.txt
    ```
-2. Copy `frontend/.env.example` to `frontend/.env` and (optionally) create
-   `backend/.env` containing your `OPENAI_API_KEY`.
+2. Copy `backend/.env.example` to `backend/.env` and edit it to set
+   `AI_PROVIDER` and the API keys for that provider. Also copy
+   `frontend/.env.example` to `frontend/.env`.
 3. Start the backend
    ```bash
    uvicorn backend.main:app --reload
@@ -25,7 +26,9 @@ Open the URL shown by Streamlit and upload a `.docx` file. Type instructions in 
 
 - `backend/`: Contains the FastAPI backend application.
   - `main.py`: FastAPI endpoints for processing documents.
-  - `llm_handler.py`: Handles communication with the OpenAI API.
+  - `llm_handler.py`: Handles communication with the configured AI provider.
+  - `ai_client.py`: LiteLLM-based client supporting multiple providers.
+  - `config.py`: Provider settings and application configuration.
   - `word_processor.py`: Core script for manipulating Word documents.
 - `frontend/`: Contains the Streamlit frontend application.
   - `streamlit_app.py`: The user interface.
@@ -36,7 +39,7 @@ Open the URL shown by Streamlit and upload a `.docx` file. Type instructions in 
 ### Prerequisites
 
 - Python 3.8+
-- An OpenAI API Key
+- An API key for your chosen provider (OpenAI, Azure, Anthropic, etc.)
 
 ### Installation
 
@@ -57,14 +60,15 @@ Open the URL shown by Streamlit and upload a `.docx` file. Type instructions in 
     pip install -r requirements.txt
     ```
 
-4.  **Set up your OpenAI API Key:**
-    Create a file named `.env` in the `backend/` directory with your OpenAI API key:
+4.  **Configure your AI provider:**
+    Copy `backend/.env.example` to `backend/.env` and edit the values:
     ```
+    AI_PROVIDER=openai  # or azure_openai, anthropic, google
     OPENAI_API_KEY="your_openai_api_key_here"
+    # Other provider keys are also supported
     ```
-    Also copy `frontend/.env.example` to `frontend/.env` so Streamlit can read the same key.
     These `.env` files are ignored by git and should not be committed.
-    Alternatively, you can set the variable in your shell environment.
+    Alternatively, you can set the variables in your shell environment.
 
 ### Running the Application
 
@@ -117,7 +121,7 @@ After both services are deployed and the environment variables are configured, n
     provide a short numbered summary of potential improvements before giving
     editing instructions.
 2.  Streamlit sends this data to the FastAPI backend.
-3.  The backend calls the OpenAI API (`llm_handler.py`) with the document content (or a summary) and the user's instructions. It requests OpenAI to return a list of specific text changes in a predefined JSON format.
+3.  The backend calls the configured AI provider (`llm_handler.py` / `ai_client.py`) with the document content (or a summary) and the user's instructions. It requests the model to return a list of specific text changes in a predefined JSON format.
 4.  The LLM's JSON response is then passed to the `word_processor.py` script along with the original Word document.
 5.  `word_processor.py` applies these changes to the document, creating tracked revisions and comments.
 6.  The backend returns the processed document and any logs to the Streamlit frontend.
