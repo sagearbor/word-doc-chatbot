@@ -52,7 +52,8 @@ Open the URL shown by Streamlit and upload a `.docx` file. Type instructions in 
 2.  **Create and activate a virtual environment (recommended):**
     ```bash
     python -m venv venv
-    source venv/bin/activate  # On Windows use `venv\Scripts\activate`
+    source source venv/Scripts/activate # Use On Windows use 
+    # source venv/bin/activate  # Use on Unix, Mac, WSL systems
     ```
 
 3.  **Install dependencies:**
@@ -73,16 +74,17 @@ Open the URL shown by Streamlit and upload a `.docx` file. Type instructions in 
 ### Running the Application
 
 1.  **Start the FastAPI backend:**
-    Navigate to the `backend` directory and run:
+    From the project root (not inside backend/), run:
     ```bash
-    uvicorn main:app --reload --host 0.0.0.0 --port 8000
+    uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
     ```
 
 2.  **Start the Streamlit frontend:**
-    In a new terminal, navigate to the `frontend` directory and run:
+    In a new terminal, from the project root, run:
     ```bash
-    streamlit run streamlit_app.py
+    streamlit run frontend/streamlit_app.py
     ```
+    > Note: If you see an error about `st.experimental_rerun`, update Streamlit to a recent version; the code now uses `st.rerun()`.
 
 Open your browser and go to the URL provided by Streamlit (usually `http://localhost:8501`).
 

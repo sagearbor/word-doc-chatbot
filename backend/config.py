@@ -2,8 +2,9 @@ import os
 from typing import Dict, Any, Optional
 from dotenv import load_dotenv
 
-# Load environment variables from .env file
-load_dotenv()
+# Load environment variables from the .env file in this directory
+dotenv_path = os.path.join(os.path.dirname(__file__), '.env')
+load_dotenv(dotenv_path)
 
 class AIConfig:
     """Configuration for AI providers with LiteLLM integration."""
@@ -19,7 +20,8 @@ class AIConfig:
             "api_key_env": "AZURE_OPENAI_API_KEY",
             "api_base_env": "AZURE_OPENAI_ENDPOINT",
             "api_version_env": "AZURE_OPENAI_API_VERSION",
-            "default_model": "gpt-4"
+            # Use AZURE_OPENAI_DEPLOYMENT env var if set, else fallback to a placeholder deployment name
+            "default_model": os.getenv("AZURE_OPENAI_DEPLOYMENT", "YOUR_AZURE_DEPLOYMENT_NAME")
         },
         "anthropic": {
             "model_prefix": "",
@@ -52,7 +54,12 @@ class AIConfig:
     @classmethod
     def get_current_provider(cls) -> str:
         """Get the currently configured provider."""
-        return os.getenv("AI_PROVIDER", "openai")
+        provider = os.getenv("AI_PROVIDER", "openai")
+        # Strip any inline comments and whitespace, and normalize case
+        provider = provider.split('#')[0].strip().lower()
+        if provider not in cls.PROVIDERS:
+            raise ValueError(f"Unknown provider: {provider}. Available: {list(cls.PROVIDERS.keys())}")
+        return provider
 
 class AppConfig:
     """General application configuration."""

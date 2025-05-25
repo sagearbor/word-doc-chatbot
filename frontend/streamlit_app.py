@@ -60,7 +60,7 @@ with st.sidebar:
                     st.error(st.session_state.error_message)
                 finally:
                     st.session_state.processing = False
-                    st.experimental_rerun()
+                    st.rerun()
         else:
             st.warning("Please upload a .docx file for analysis.")
     
@@ -136,7 +136,7 @@ if st.button("✨ Process Document", type="primary", disabled=st.session_state.p
             finally:
                 st.session_state.processing = False
                 # Force a rerun to update UI elements based on new session state
-                st.experimental_rerun()
+                st.rerun()
 
 
     elif not uploaded_file:

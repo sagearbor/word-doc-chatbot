@@ -60,11 +60,17 @@ Design applications to support multiple AI providers:
 
 ### Environment Variables Pattern
 ```bash
-# AI Provider Configuration
-AI_PROVIDER=openai  # or azure_openai, anthropic, google, etc.
+# AI Provider Configuration (use only the relevant set)
+AI_PROVIDER=openai           # or azure_openai, anthropic, google, etc.
 OPENAI_API_KEY=your_key_here
-AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com/
-ANTHROPIC_API_KEY=your_key_here
+# For Azure OpenAI:
+# AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com/
+# AZURE_OPENAI_API_KEY=your_azure_key_here
+# AZURE_OPENAI_API_VERSION=2023-07-01-preview
+# For Anthropic:
+# ANTHROPIC_API_KEY=your_key_here
+# For Google:
+# GOOGLE_API_KEY=your_key_here
 
 # Deployment Configuration
 DEPLOYMENT_TARGET=azure  # or render, aws, local, etc.
@@ -125,11 +131,11 @@ git checkout -b feature/new-feature
 # For Flask applications
 python app.py
 
-# For FastAPI applications
-uvicorn main:app --reload
+# For FastAPI applications (run from **project root**):
+uvicorn backend.main:app --reload
 
-# For Streamlit applications
-streamlit run app.py
+# For Streamlit applications (run from project root):
+streamlit run frontend/streamlit_app.py
 ```
 
 ## AI Model Integration Guidelines

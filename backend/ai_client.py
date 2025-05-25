@@ -9,6 +9,8 @@ class UnifiedAIClient:
     def __init__(self, provider: Optional[str] = None):
         self.provider = provider or AIConfig.get_current_provider()
         self.config = AIConfig.get_provider_config(self.provider)
+        print(f"[DEBUG] UnifiedAIClient initialized with provider='{self.provider}' "
+              f"and API key var='{self.config.get('api_key_env')}'")
     
     def generate_response(
         self, 
@@ -20,14 +22,11 @@ class UnifiedAIClient:
     ) -> str:
         """Generate a response using the configured AI provider."""
         
-        # Use default model if none specified
         if not model:
             model = self.config["default_model"]
         
-        # Add model prefix if needed
         full_model = f"{self.config['model_prefix']}{model}"
         
-        # Prepare parameters
         params = {
             "model": full_model,
             "messages": [{"role": "user", "content": prompt}],
@@ -37,7 +36,6 @@ class UnifiedAIClient:
             **kwargs
         }
         
-        # Add provider-specific parameters
         if "api_base_env" in self.config:
             api_base = os.getenv(self.config["api_base_env"])
             if api_base:
@@ -74,7 +72,6 @@ class UnifiedAIClient:
             **kwargs
         }
         
-        # Add provider-specific parameters
         if "api_base_env" in self.config:
             api_base = os.getenv(self.config["api_base_env"])
             if api_base:
