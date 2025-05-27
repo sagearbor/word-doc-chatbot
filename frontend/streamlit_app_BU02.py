@@ -27,7 +27,6 @@ if 'edits_applied_count' not in st.session_state: st.session_state.edits_applied
 if 'edits_suggested_count' not in st.session_state: st.session_state.edits_suggested_count = None
 if 'processing' not in st.session_state: st.session_state.processing = False
 if 'analysis_content' not in st.session_state: st.session_state.analysis_content = None
-if 'debug_log_from_backend' not in st.session_state: st.session_state.debug_log_from_backend = None
 
 
 with st.sidebar:
@@ -36,8 +35,8 @@ with st.sidebar:
 
     if st.button("🔍 Analyze Document for Suggestions", disabled=st.session_state.processing or not uploaded_file):
         st.session_state.processing = True
-        st.session_state.analysis_content = None 
-        st.session_state.error_message = None    
+        st.session_state.analysis_content = None # Clear previous analysis
+        st.session_state.error_message = None    # Clear previous errors
         with st.spinner("Analyzing document with LLM..."):
             files = {"file": (uploaded_file.name, uploaded_file.getvalue(), uploaded_file.type)}
             try:
@@ -50,55 +49,32 @@ with st.sidebar:
                 st.session_state.error_message = f"Analysis failed: {e}"
             finally:
                 st.session_state.processing = False
-                st.rerun() 
+                st.rerun() # Rerun to update UI with analysis or error
 
     st.subheader("Author for Changes (Optional)")
     author_name_llm = st.text_input(
-        "Name for LLM's changes:",
-        value="AI Reviewer",
+        "Name for LLM's changes:", 
+        value="AI Reviewer", 
         help="This name will be used as the author for the tracked changes made by the LLM."
     )
 
     st.subheader("Search Settings")
     case_sensitive_search = st.checkbox(
-        "Case-sensitive search",
-        value=True,
+        "Case-sensitive search", 
+        value=True, 
         help="If checked, 'Text' and 'text' are treated as different. If unchecked, they are the same."
     )
-
+    
     st.subheader("Tracked Changes Settings")
     add_comments_to_changes = st.checkbox(
-        "Add comments to changes",
-        value=True,
+        "Add comments to changes", 
+        value=True, 
         help="If checked, the LLM's reason for change will be added as a comment."
     )
 
     st.subheader("Debugging (for developers)")
-    debug_level_options = {
-        "Off": ("off", "No server-side debugging."),
-        "Standard Debugging": ("standard", "Logs detailed processing steps to the server console."),
-        "Extended Debugging": ("extended", "Logs very verbose details, including full contexts (implies Standard).")
-    }
-    debug_level_choice = st.selectbox(
-        "Server Debugging Level:",
-        options=list(debug_level_options.keys()),
-        index=0, # Default to "Off"
-        format_func=lambda x: f"{x} - {debug_level_options[x][1]}" # Show description in dropdown
-    )
-
-    # Translate dropdown choice to boolean flags for the backend
-    debug_mode_payload = False
-    extended_debug_mode_payload = False
-    if debug_level_options[debug_level_choice][0] == "standard":
-        debug_mode_payload = True
-    elif debug_level_options[debug_level_choice][0] == "extended":
-        debug_mode_payload = True
-        extended_debug_mode_payload = True
-    
-    # Option to show debug logs from backend in Streamlit UI (new feature)
-    # This would require backend changes to return debug logs in the response.
-    # For now, this is just a UI element; backend doesn't support it yet.
-    # show_debug_in_ui = st.checkbox("Show server debug log in UI (if available)", value=False, help="Attempts to display server debug output here. Requires backend support.")
+    debug_mode_st = st.checkbox("Enable Debug Mode", value=False, help="Logs detailed processing steps to the server console.")
+    extended_debug_mode_st = st.checkbox("Enable Extended Debug Mode", value=False, help="Logs very verbose details, including full contexts.")
 
 
 user_instructions = st.text_area(
@@ -125,7 +101,7 @@ if st.button("✨ Process Document", type="primary", disabled=st.session_state.p
     st.session_state.status_message = None
     st.session_state.edits_applied_count = None
     st.session_state.edits_suggested_count = None
-    st.session_state.debug_log_from_backend = None # Clear previous backend debug log
+    # st.session_state.analysis_content = None # Keep analysis if user wants to refer to it
 
     with st.spinner("Processing your document... This may take a moment. Please wait."):
         files = {"file": (uploaded_file.name, uploaded_file.getvalue(), uploaded_file.type)}
@@ -134,14 +110,14 @@ if st.button("✨ Process Document", type="primary", disabled=st.session_state.p
             "author_name": author_name_llm,
             "case_sensitive": case_sensitive_search,
             "add_comments": add_comments_to_changes,
-            "debug_mode": debug_mode_payload,             # Use translated value
-            "extended_debug_mode": extended_debug_mode_payload # Use translated value
+            "debug_mode": debug_mode_st,                   # Pass debug flag
+            "extended_debug_mode": extended_debug_mode_st  # Pass extended debug flag
         }
-
+        
         try:
             response = requests.post(PROCESS_ENDPOINT, files=files, data=payload, timeout=300)
-            response.raise_for_status()
-
+            response.raise_for_status() 
+            
             result = response.json()
             st.session_state.processed_filename = result.get("processed_filename")
             st.session_state.processed_file_url = f"{DOWNLOAD_ENDPOINT_PREFIX}/{st.session_state.processed_filename}" if st.session_state.processed_filename else None
@@ -149,17 +125,13 @@ if st.button("✨ Process Document", type="primary", disabled=st.session_state.p
             st.session_state.status_message = result.get("status_message", "Processing finished.")
             st.session_state.edits_applied_count = result.get("edits_applied_count")
             st.session_state.edits_suggested_count = result.get("edits_suggested_count")
-            # Potentially get debug log if backend supports it
-            # st.session_state.debug_log_from_backend = result.get("backend_debug_log") 
-
-
+            
+            # Display success message immediately
             st.success(st.session_state.status_message)
             if st.session_state.edits_suggested_count is not None and st.session_state.edits_applied_count is not None:
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.metric(label="LLM Edits Suggested", value=st.session_state.edits_suggested_count)
-                with col2:
-                    st.metric(label="Edits Successfully Applied", value=st.session_state.edits_applied_count)
+                st.metric(label="LLM Edits Suggested", value=st.session_state.edits_suggested_count)
+                st.metric(label="Edits Successfully Applied", value=st.session_state.edits_applied_count)
+
 
         except requests.exceptions.HTTPError as errh:
             error_body = "Could not parse error response."
@@ -176,38 +148,27 @@ if st.button("✨ Process Document", type="primary", disabled=st.session_state.p
             st.session_state.error_message = f"An unexpected error occurred: {str(e)}"
         finally:
             st.session_state.processing = False
-            st.rerun()
+            st.rerun() # Rerun to update UI elements based on new session state
 
 # --- Display Results Area (after processing attempt) ---
-if not st.session_state.processing:
-    if st.session_state.status_message:
-        # Determine the type of message for styling (optional)
-        if "success" in st.session_state.status_message.lower() or \
-           (st.session_state.edits_applied_count is not None and st.session_state.edits_applied_count > 0):
-            st.success(st.session_state.status_message)
-        elif st.session_state.edits_suggested_count == 0 or \
-             (st.session_state.edits_suggested_count is not None and st.session_state.edits_applied_count == 0):
-            st.info(st.session_state.status_message)
-        else: # Default or partial success
-            st.info(st.session_state.status_message) # Or st.write
-
-        if st.session_state.edits_suggested_count is not None and st.session_state.edits_applied_count is not None:
-            col1, col2 = st.columns(2)
-            with col1:
-                st.metric(label="LLM Edits Suggested", value=st.session_state.edits_suggested_count)
-            with col2:
-                st.metric(label="Edits Successfully Applied", value=st.session_state.edits_applied_count)
+if not st.session_state.processing: # Only show this section if not currently processing
+    if st.session_state.status_message: # General status from backend
+        # This is now shown above, but can be enhanced here if needed
+        pass 
 
     if st.session_state.error_message: # If there was an error during the last attempt
         st.error(st.session_state.error_message)
 
     if st.session_state.processed_file_url and st.session_state.processed_filename:
         st.markdown("---")
+        # st.subheader("✅ Processed Document Ready!") # Status message now covers this
+
         try:
+            # Fetch the processed file from the backend for download button
             file_response = requests.get(st.session_state.processed_file_url, stream=True, timeout=60)
             file_response.raise_for_status()
             file_bytes = file_response.content
-
+            
             st.download_button(
                 label=f"📥 Download {st.session_state.processed_filename}",
                 data=file_bytes,
@@ -218,13 +179,11 @@ if not st.session_state.processing:
             st.error(f"Could not fetch processed file for download: {e}. You can try downloading from this link: [{st.session_state.processed_filename}]({st.session_state.processed_file_url})")
             st.markdown(f"Alternatively, try to download directly: [{st.session_state.processed_filename}]({st.session_state.processed_file_url})")
 
-    if st.session_state.log_content: # This is the processor log (ambiguities, skips etc.)
+    if st.session_state.log_content:
         st.markdown("---")
         st.subheader("📝 Processing Log")
-        st.text_area("Processing Log Details", value=st.session_state.log_content, height=200, disabled=True, label_visibility="visible")
+        st.text_area("", value=st.session_state.log_content, height=200, disabled=True, label_visibility="collapsed")
 
-    # To display backend debug log in UI (if backend is modified to send it)
-    # if show_debug_in_ui and st.session_state.debug_log_from_backend:
-    #     st.markdown("---")
-    #     st.subheader("🖥️ Server Debug Output")
-    #     st.text_area("Server Debug Log", value=st.session_state.debug_log_from_backend, height=200, disabled=True, label_visibility="visible")
+# Removed the secondary chat-like interface at the bottom to simplify the UI to the main form-based interaction.
+# If you want to re-enable it, ensure its session state ('messages') and widgets are correctly managed
+# and do not conflict with the main form's session state for file processing.

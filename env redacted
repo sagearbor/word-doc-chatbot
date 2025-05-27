@@ -1,0 +1,54 @@
+# word-doc-chatbot/.env
+
+#-----------------------------------------------------------------------------
+# CURRENT ACTIVE CONFIGURATION
+#-----------------------------------------------------------------------------
+CURRENT_AI_PROVIDER="azure_openai"
+DEBUG_MODE="true" # General app debug, set to "true" for AppConfig debug, separate from processor debug
+ENVIRONMENT="development"
+
+#-----------------------------------------------------------------------------
+# AZURE OPENAI CONFIGURATION
+#-----------------------------------------------------------------------------
+AZURE_OPENAI_API_KEY="REDACTED"
+AZURE_OPENAI_ENDPOINT="https://ai-sandbox-instance.openai.azure.com/"
+AZURE_OPENAI_API_VERSION="2024-02-15-preview" # Use your actual valid API version
+
+AZURE_OPENAI_DEFAULT_DEPLOYMENT_NAME="gpt-4o-mini" # Your deployment ID for the default/desired model
+AZURE_OPENAI_GPT4_DEPLOYMENT_NAME="gpt-4o-mini"    # Your deployment ID for a GPT-4 class model (can be same or different)
+
+#-----------------------------------------------------------------------------
+# OTHER PROVIDER EXAMPLES (fill if used)
+#-----------------------------------------------------------------------------
+# OPENAI_API_KEY=""
+# OPENAI_DEFAULT_MODEL_ID="gpt-3.5-turbo"
+# OPENAI_GPT4_MODEL_ID="gpt-4-turbo-preview"
+
+# ANTHROPIC_API_KEY=""
+# ANTHROPIC_DEFAULT_MODEL_ID="claude-3-sonnet-20240229"
+
+# GOOGLE_API_KEY=""
+# GOOGLE_DEFAULT_MODEL_ID="gemini-1.5-flash-latest"
+
+#-----------------------------------------------------------------------------
+# STREAMLIT & BACKEND URL
+#-----------------------------------------------------------------------------
+BACKEND_URL="http://localhost:8000"
+API_VERSION=v1
+# STREAMLIT_SERVER_PORT=8501 # Only needed if you run streamlit on a non-default port
+# STREAMLIT_SERVER_ADDRESS=localhost
+
+# Environment
+ENVIRONMENT=development
+
+# Streamlit Configuration
+STREAMLIT_SERVER_PORT=8501
+STREAMLIT_SERVER_ADDRESS=localhost
+
+# Application Settings
+APP_TITLE=Word Doc Track Changer
+DEBUG_MODE=true
+
+# File Upload Settings
+MAX_FILE_SIZE_MB=10
+ALLOWED_FILE_TYPES=.docx,.doc,.pdf,.txt

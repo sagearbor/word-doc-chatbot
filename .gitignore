@@ -1,3 +1,5 @@
+# .gitignore file
+
 # Environment files
 .env
 *.env

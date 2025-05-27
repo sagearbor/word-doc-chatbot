@@ -1,7 +1,10 @@
 import os
+import os # Import os to set environment variables
 from typing import Optional, Dict, Any
-from litellm import completion
+import litellm # Import the base module
 from .config import AIConfig
+
+os.environ['LITELLM_LOG'] = 'DEBUG' # Recommended way to enable LiteLLM debug logs
 
 class UnifiedAIClient:
     """Unified client for multiple AI providers using LiteLLM."""
@@ -42,12 +45,26 @@ class UnifiedAIClient:
                 params["api_base"] = api_base
         
         if "api_version_env" in self.config:
-            api_version = os.getenv(self.config["api_version_env"])
-            if api_version:
-                params["api_version"] = api_version
+            raw_api_version = os.getenv(self.config["api_version_env"])
+            raw_api_version = os.getenv(self.config["api_version_env"])
+            if raw_api_version:
+                # Clean the version string:
+                # 1. Take part before any '#' comment
+                # 2. Strip leading/trailing whitespace
+                # 3. Strip all leading/trailing quote characters (' and ")
+                temp_version = raw_api_version.split('#')[0].strip()
+                # Iteratively strip quotes in case of mixed or multiple quotes like "'value'"
+                while len(temp_version) > 1 and temp_version[0] in ("'", "\"") and temp_version[-1] in ("'", "\""):
+                    temp_version = temp_version[1:-1]
+                cleaned_api_version = temp_version.strip("'\"") # Final strip for single quotes
+
+                print(f"[AI_CLIENT_DEBUG] Raw api_version from env: '{raw_api_version}'") # DEBUG
+                print(f"[AI_CLIENT_DEBUG] Cleaned api_version: '{cleaned_api_version}' (Type: {type(cleaned_api_version)})") # DEBUG
+                params["api_version"] = cleaned_api_version
         
         try:
-            response = completion(**params)
+            print(f"[AI_CLIENT_DEBUG] Params to litellm.completion (generate_response): {params}") # DEBUG
+            response = litellm.completion(**params)
             return response.choices[0].message.content
         except Exception as e:
             raise Exception(f"Error calling {self.provider} API: {str(e)}")
@@ -78,12 +95,26 @@ class UnifiedAIClient:
                 params["api_base"] = api_base
         
         if "api_version_env" in self.config:
-            api_version = os.getenv(self.config["api_version_env"])
-            if api_version:
-                params["api_version"] = api_version
+            raw_api_version = os.getenv(self.config["api_version_env"])
+            raw_api_version = os.getenv(self.config["api_version_env"])
+            if raw_api_version:
+                # Clean the version string:
+                # 1. Take part before any '#' comment
+                # 2. Strip leading/trailing whitespace
+                # 3. Strip all leading/trailing quote characters (' and ")
+                temp_version = raw_api_version.split('#')[0].strip()
+                # Iteratively strip quotes in case of mixed or multiple quotes like "'value'"
+                while len(temp_version) > 1 and temp_version[0] in ("'", "\"") and temp_version[-1] in ("'", "\""):
+                    temp_version = temp_version[1:-1]
+                cleaned_api_version = temp_version.strip("'\"") # Final strip for single quotes
+                
+                print(f"[AI_CLIENT_DEBUG] Raw api_version from env (chat): '{raw_api_version}'") # DEBUG
+                print(f"[AI_CLIENT_DEBUG] Cleaned api_version (chat): '{cleaned_api_version}' (Type: {type(cleaned_api_version)})") # DEBUG
+                params["api_version"] = cleaned_api_version
         
         try:
-            response = completion(**params)
+            print(f"[AI_CLIENT_DEBUG] Params to litellm.completion (chat_completion): {params}") # DEBUG
+            response = litellm.completion(**params)
             return response.choices[0].message.content
         except Exception as e:
             raise Exception(f"Error calling {self.provider} API: {str(e)}")

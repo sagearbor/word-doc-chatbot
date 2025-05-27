@@ -131,27 +131,14 @@ def _add_comment_to_paragraph(paragraph, current_para_idx: int, comment_text: st
         author_display = f"{author_name} (LLM)"
         name_parts = [w for w in author_display.replace("(", "").replace(")", "").split() if w]
         initials = (name_parts[0][0] + name_parts[1][0]).upper() if len(name_parts) >= 2 else (name_parts[0][:2].upper() if name_parts else "AI")
-        
-        # Corrected single call to add_comment
-        paragraph.add_comment(text=comment_text, author=author_display, initials=initials) 
-        
+        paragraph.add_comment(comment_text, author=author_display, initials=initials)
         log_debug(f"P{current_para_idx+1}: Added comment: '{comment_text[:30]}...'.")
-    except AttributeError as e_attr: # This specific error might indicate 'paragraph' is not what we expect
-        log_message = f"Comment addition failed for P{current_para_idx+1} (AttributeError): {e_attr}. Object type: {type(paragraph)}. Comment: '{comment_text[:50]}...'"
-        log_debug(f"CRITICAL_WARNING - {log_message}")
-        ambiguous_or_failed_changes_log.append({
-            **log_ctx, 
-            "issue": log_message, 
-            "type": "CriticalWarning"
-        })
-    except Exception as e_gen: # Catch other general exceptions during comment addition
-        log_message = f"Comment addition failed for P{current_para_idx+1} (General Error): {e_gen}. Comment: '{comment_text[:50]}...'"
-        log_debug(f"WARNING - {log_message}")
-        ambiguous_or_failed_changes_log.append({
-            **log_ctx, 
-            "issue": log_message, 
-            "type": "Warning"
-        })
+    except AttributeError as e_attr:
+        ambiguous_or_failed_changes_log.append({**log_ctx, "issue": f"Comment addition failed (AttributeError): {e_attr}. Comment: {comment_text}", "type": "CriticalWarning"})
+        log_debug(f"P{current_para_idx+1}: CRITICAL_WARNING - Could not add comment ('{comment_text[:30]}...') due to AttributeError: {e_attr}.")
+    except Exception as e_gen:
+        ambiguous_or_failed_changes_log.append({**log_ctx, "issue": f"Comment addition failed: {e_gen}. Comment: {comment_text}", "type": "Warning"})
+        log_debug(f"P{current_para_idx+1}: WARNING - Could not add comment ('{comment_text[:30]}...'). Error: {e_gen}")
 
 def _apply_markup_to_span(
         paragraph_obj, current_para_idx: int, global_start: int, global_end: int, text_to_markup: str,
