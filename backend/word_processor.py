@@ -9,6 +9,80 @@ from docx import Document # Ensure this is available
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from typing import List, Dict, Tuple, Optional, Any
+# --- Monkey-patch python-docx Package for comments support if missing ---
+# Patch python-docx's Package to ensure baseURI for lxml/OPC compatibility
+from docx.opc.constants import RELATIONSHIP_TYPE as RT
+from docx.opc.part import XmlPart
+from docx.opc.packuri import PackURI
+from docx.package import Package
+from docx.oxml import OxmlElement
+
+# Patch python-docx's Package to ensure baseURI for lxml/OPC compatibility
+if not hasattr(Package, "baseURI"):
+    Package.baseURI = "/"
+if not hasattr(Package, "ext"):
+    Package.ext = ""
+
+def get_or_add_comments_part(self):
+    """
+    Returns or creates the comments part and ensures the main document part has a relationship to it.
+    Always called as a method on a docx Part (usually doc.part); wires up doc.part -> comments part as required.
+    This version uses protected python-docx APIs to avoid collection/comparison errors and ensure correct part tracking.
+    """
+    partname = PackURI("/word/comments.xml")
+    content_type = (
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml"
+    )
+    # Step 1: get package ref
+    package = self.package if hasattr(self, "package") else self
+    # Step 2: find or create comments part properly in part registry
+    for part in getattr(package, "parts", []):
+        if hasattr(part, "partname") and part.partname == partname:
+            comments_part = part
+            break
+    else:
+        comments_elm = OxmlElement("w:comments")
+        comments_part = XmlPart(package, partname, content_type, comments_elm)
+        # Defensive: forcibly correct attributes if anything got mis-set by a python-docx version bug
+        if not isinstance(comments_part.partname, PackURI):
+            comments_part.partname = partname
+        if not hasattr(comments_part, "package") or not isinstance(comments_part.package, Package):
+            comments_part.package = package
+        comments_part.baseURI = "/"
+        if not hasattr(comments_part, "ext"):
+            comments_part.ext = ""
+        # Use the protected _add_part so any internal structures stay correct
+        if hasattr(package, "_add_part"):
+            package._add_part(comments_part)
+        else:  # fallback, direct relation
+            package.relate_to(comments_part, RT.COMMENTS)
+        # Re-purge bad parts after add
+        for i in range(len(package.parts) - 1, -1, -1):
+            p = package.parts[i]
+            broken = False
+            if not hasattr(p, "partname"):
+                broken = True
+            elif not isinstance(p.partname, PackURI):
+                broken = True
+            elif not isinstance(p, XmlPart) and isinstance(p, object):
+                broken = True
+            if broken:
+                print(f"[PATCH_WARN] (post-add) Removing package.parts[{i}]: {type(p).__name__}, partname type: {type(getattr(p, 'partname', None))}")
+                del package.parts[i]
+    # Step 3: ensure the main document part has the correct relationship
+    doc_part = self if (hasattr(self, "reltype") and self.reltype == RT.DOCUMENT) else getattr(package, "main_document_part", None)
+    if doc_part is None:
+        doc_part = self
+    rels = getattr(doc_part, "_rels", {}).values()
+    for rel in rels:
+        if rel.reltype == RT.COMMENTS:
+            return comments_part
+    doc_part.relate_to(comments_part, RT.COMMENTS)
+    return comments_part
+
+# Patch only if not present
+if not hasattr(Package, "get_or_add_comments_part"):
+    Package.get_or_add_comments_part = get_or_add_comments_part
 
 # --- Global Configuration Flags ---
 DEBUG_MODE = False
@@ -122,35 +196,118 @@ def _build_visible_text_map(paragraph) -> Tuple[str, List[Dict[str, Any]]]:
     return final_text, elements_map
 
 
-def _add_comment_to_paragraph(paragraph, current_para_idx: int, comment_text: str, author_name: str,
+def _get_next_comment_id(doc):  # doc is a Document
+    """Gets the next available comment ID."""
+    # Use the non-public but de facto supported docx "get_or_add_comments_part" method.
+    comments_part = doc.part.package.get_or_add_comments_part()
+
+    if comments_part.element is None:
+        comments_part.element = OxmlElement('w:comments')
+        comments_part.element.set(qn('xmlns:w'), 'http://schemas.openxmlformats.org/wordprocessingml/2006/main')
+
+    highest_id = -1
+    for comment_element in comments_part.element.findall(qn('w:comment')):
+        comment_id_str = comment_element.get(qn('w:id'))
+        if comment_id_str is not None:
+            try:
+                highest_id = max(highest_id, int(comment_id_str))
+            except ValueError:
+                pass  # ignore non-integer IDs if any
+    return highest_id + 1
+
+def _add_comment_oxml(doc, paragraph_oxml, run_to_anchor_oxml: OxmlElement,
+                       comment_text: str, author: str, initials: str, comment_id: int):
+    """Adds a comment using OXML manipulation."""
+    # Use the non-public but de facto supported docx "get_or_add_comments_part" method.
+    comments_part = doc.part.package.get_or_add_comments_part()
+    if comments_part.element is None:
+        comments_part.element = OxmlElement('w:comments')
+        comments_part.element.set(qn('xmlns:w'), 'http://schemas.openxmlformats.org/wordprocessingml/2006/main')
+    comments_elm = comments_part.element
+
+    comment_elm = OxmlElement('w:comment')
+    comment_elm.set(qn('w:id'), str(comment_id))
+    comment_elm.set(qn('w:author'), author)
+    comment_elm.set(qn('w:date'), datetime.datetime.now(datetime.timezone.utc).isoformat())
+    comment_elm.set(qn('w:initials'), initials)
+
+    p_in_comment = OxmlElement('w:p')
+    r_in_comment = OxmlElement('w:r')
+    t_in_comment = OxmlElement('w:t')
+    t_in_comment.text = comment_text
+    r_in_comment.append(t_in_comment)
+    p_in_comment.append(r_in_comment)
+    comment_elm.append(p_in_comment)
+    comments_elm.append(comment_elm)
+
+    # Add commentReference and range markers in main doc
+    rPr = run_to_anchor_oxml.get_or_add_rPr()
+    comment_ref = OxmlElement('w:commentReference')
+    comment_ref.set(qn('w:id'), str(comment_id))
+    rPr.append(comment_ref)
+
+    anchor_run_parent = run_to_anchor_oxml.getparent()
+    if anchor_run_parent is None:
+        log_debug(f"P(OXML) CRITICAL: run_to_anchor_oxml (for comment ID {comment_id}) has no parent. Cannot place commentRangeStart/End.")
+        return
+
+    try:
+        idx = anchor_run_parent.index(run_to_anchor_oxml)
+    except ValueError:
+        log_debug(f"P(OXML) CRITICAL: run_to_anchor_oxml not found in its supposed parent. Cannot place commentRangeStart/End.")
+        return
+
+    comment_range_start = OxmlElement('w:commentRangeStart')
+    comment_range_start.set(qn('w:id'), str(comment_id))
+    anchor_run_parent.insert(idx, comment_range_start)
+    comment_range_end = OxmlElement('w:commentRangeEnd')
+    comment_range_end.set(qn('w:id'), str(comment_id))
+    anchor_run_parent.insert(idx + 2, comment_range_end)
+
+    log_text_content = ""
+    try:
+        t_element = run_to_anchor_oxml.find(qn('w:t'))
+        if t_element is not None and t_element.text:
+            log_text_content = t_element.text
+        else:
+            delText_element = run_to_anchor_oxml.find(qn('w:delText'))
+            if delText_element is not None and delText_element.text:
+                log_text_content = delText_element.text
+    except Exception:
+        pass
+    log_debug(f"P(OXML): Added comment ID {comment_id} references for run content '{log_text_content[:20]}...' in parent {anchor_run_parent.tag}")
+
+
+def _add_comment_to_paragraph(doc_object: Document, paragraph_obj_for_comment, # Added doc_object
+                             current_para_idx: int, comment_text: str, author_name: str,
+                             run_element_to_anchor: Optional[OxmlElement], # The specific w:r OXML element
                              ambiguous_or_failed_changes_log: List[Dict],
                              edit_item_details_for_log: Optional[Dict] = None):
     if not ADD_COMMENTS_TO_CHANGES or not comment_text: return
     log_ctx = {"paragraph_index": current_para_idx, **(edit_item_details_for_log or {})}
+    
+    author_display = f"{author_name} (LLM)"
+    name_parts = [w for w in author_display.replace("(", "").replace(")", "").split() if w]
+    initials = (name_parts[0][0] + name_parts[1][0]).upper() if len(name_parts) >= 2 else (name_parts[0][:2].upper() if name_parts else "AI")
+
     try:
-        author_display = f"{author_name} (LLM)"
-        name_parts = [w for w in author_display.replace("(", "").replace(")", "").split() if w]
-        initials = (name_parts[0][0] + name_parts[1][0]).upper() if len(name_parts) >= 2 else (name_parts[0][:2].upper() if name_parts else "AI")
-        
-        # Corrected single call to add_comment
-        paragraph.add_comment(text=comment_text, author=author_display, initials=initials) 
-        
-        log_debug(f"P{current_para_idx+1}: Added comment: '{comment_text[:30]}...'.")
-    except AttributeError as e_attr: # This specific error might indicate 'paragraph' is not what we expect
-        log_message = f"Comment addition failed for P{current_para_idx+1} (AttributeError): {e_attr}. Object type: {type(paragraph)}. Comment: '{comment_text[:50]}...'"
+        log_debug(f"P{current_para_idx+1}: Attempting OXML comment. Run element to anchor: {run_element_to_anchor.tag if run_element_to_anchor is not None else 'None'}")
+        if run_element_to_anchor is None:
+            log_debug(f"P{current_para_idx+1}: Cannot add OXML comment, run_element_to_anchor is None.")
+            raise ValueError("run_element_to_anchor cannot be None for OXML comment.")
+
+        comment_id = _get_next_comment_id(doc_object)
+        _add_comment_oxml(doc_object, paragraph_obj_for_comment._p, run_element_to_anchor,
+                           comment_text, author_display, initials, comment_id)
+        log_debug(f"P{current_para_idx+1}: Successfully attempted OXML comment ID {comment_id}.")
+
+    except Exception as e_oxml_comment:
+        log_message = f"OXML Comment addition failed for P{current_para_idx+1}: {type(e_oxml_comment).__name__}: {e_oxml_comment}. Comment: '{comment_text[:50]}...'"
         log_debug(f"CRITICAL_WARNING - {log_message}")
         ambiguous_or_failed_changes_log.append({
-            **log_ctx, 
-            "issue": log_message, 
+            **log_ctx,
+            "issue": log_message,
             "type": "CriticalWarning"
-        })
-    except Exception as e_gen: # Catch other general exceptions during comment addition
-        log_message = f"Comment addition failed for P{current_para_idx+1} (General Error): {e_gen}. Comment: '{comment_text[:50]}...'"
-        log_debug(f"WARNING - {log_message}")
-        ambiguous_or_failed_changes_log.append({
-            **log_ctx, 
-            "issue": log_message, 
-            "type": "Warning"
         })
 
 def _apply_markup_to_span(
@@ -225,7 +382,7 @@ def _apply_markup_to_span(
     return True
 
 def replace_text_in_paragraph_with_tracked_change(
-        current_para_idx: int, paragraph,
+        current_para_idx: int, paragraph, doc_object: Document, # Added doc_object
         contextual_old_text_llm, specific_old_text_llm, specific_new_text,
         reason_for_change, author, case_sensitive_flag,
         ambiguous_or_failed_changes_log) -> Tuple[str, Optional[List[Dict[str, Any]]]]:
@@ -427,7 +584,65 @@ def replace_text_in_paragraph_with_tracked_change(
     comment_to_add = reason_for_change
     if not specific_new_text:
         comment_to_add = f"Deleted: '{actual_specific_old_text_to_delete}'. Reason: {reason_for_change}"
-    _add_comment_to_paragraph(paragraph, current_para_idx, comment_to_add, author, ambiguous_or_failed_changes_log, edit_details_for_log)
+    
+    # Identify the run to anchor the comment to (e.g., the inserted run)
+    run_to_anchor_comment_oxml = None
+    if specific_new_text: # If there was an insertion, anchor comment to it
+        for el in reversed(new_xml_elements_for_paragraph):
+            if el.tag == qn('w:ins'):
+                first_r_in_ins = el.find(qn('w:r'))
+                if first_r_in_ins is not None:
+                    run_to_anchor_comment_oxml = first_r_in_ins
+                    break
+    # If no new text (deletion only), or if no <w:ins> with <w:r> found, try to anchor to the <w:del> run
+    if run_to_anchor_comment_oxml is None:
+        for el in reversed(new_xml_elements_for_paragraph):
+            if el.tag == qn('w:del'):
+                first_r_in_del = el.find(qn('w:r'))
+                if first_r_in_del is not None:
+                    run_to_anchor_comment_oxml = first_r_in_del
+                    break
+    
+    if run_to_anchor_comment_oxml is None and new_xml_elements_for_paragraph: # Fallback to last added run if any
+        last_added_el = new_xml_elements_for_paragraph[-1]
+        if last_added_el.tag == qn('w:r'):
+            run_to_anchor_comment_oxml = last_added_el
+        elif hasattr(last_added_el, 'find') and last_added_el.find(qn('w:r')) is not None:
+             run_to_anchor_comment_oxml = last_added_el.find(qn('w:r'))
+
+
+    try:
+        if doc_object and 0 <= current_para_idx < len(doc_object.paragraphs):
+            refreshed_paragraph_for_comment = doc_object.paragraphs[current_para_idx]
+            log_debug(f"P{current_para_idx+1}: Attempting OXML comment on refreshed paragraph. Anchor run: {run_to_anchor_comment_oxml.tag if run_to_anchor_comment_oxml is not None else 'None'}")
+            if run_to_anchor_comment_oxml is not None:
+                _add_comment_to_paragraph(doc_object, refreshed_paragraph_for_comment, current_para_idx, comment_to_add, author, run_to_anchor_comment_oxml, ambiguous_or_failed_changes_log, edit_details_for_log)
+            else:
+                log_debug(f"P{current_para_idx+1}: Skipped OXML comment as no suitable anchor run was identified from the new XML elements.")
+                # Log this as a failure to add comment if comments are enabled
+                if ADD_COMMENTS_TO_CHANGES:
+                     ambiguous_or_failed_changes_log.append({
+                        "paragraph_index": current_para_idx,
+                        "issue": "Skipped OXML comment: No anchor run found.",
+                        "type": "Warning", **edit_details_for_log
+                    })
+        else:
+            log_debug(f"P{current_para_idx+1}: Could not refresh paragraph for OXML comment (invalid index or doc_object).")
+            if ADD_COMMENTS_TO_CHANGES:
+                ambiguous_or_failed_changes_log.append({
+                    "paragraph_index": current_para_idx,
+                    "issue": "Could not refresh paragraph for OXML comment.",
+                    "type": "Warning", **edit_details_for_log
+                })
+    except Exception as e_refresh_and_comment:
+        log_debug(f"P{current_para_idx+1}: Error during paragraph refresh or OXML comment attempt: {e_refresh_and_comment}.")
+        if ADD_COMMENTS_TO_CHANGES:
+            ambiguous_or_failed_changes_log.append({
+                "paragraph_index": current_para_idx,
+                "issue": f"Error during OXML comment process: {e_refresh_and_comment}",
+                "type": "CriticalWarning", **edit_details_for_log
+            })
+    
     return "SUCCESS", None
 
 def process_document_with_edits(
@@ -512,7 +727,7 @@ def process_document_with_edits(
 
             try:
                 status, data_from_replace = replace_text_in_paragraph_with_tracked_change(
-                    para_idx, paragraph_obj,
+                    para_idx, paragraph_obj, doc, # Pass the main Document object 'doc'
                     edit_item["contextual_old_text"], edit_item["specific_old_text"],
                     edit_item.get("specific_new_text",""),
                     edit_item["reason_for_change"],
@@ -589,6 +804,32 @@ def process_document_with_edits(
                 log_debug(f"P{para_idx+1}: Critical error status '{status}' encountered. Halting further edit attempts for THIS PARAGRAPH to prevent cascading XML issues.")
                 break
     # ... (rest of process_document_with_edits, including saving and log file writing, is assumed unchanged)
+# Diagnostic: List all parts and types in the docx package before save
+        for idx, part in enumerate(doc.part.package.parts):
+            print(f"[PATCH_DEBUG] parts[{idx}]: {type(part).__name__}: {repr(part)}")
+# Inspect the comments part internals if present
+# REMOVE BROKEN PARTS FROM PACKAGE
+        before_count = len(doc.part.package.parts)
+        # Remove any part with a broken or wrong-type partname, or if not XmlPart
+        for i in range(len(doc.part.package.parts) - 1, -1, -1):
+            p = doc.part.package.parts[i]
+            broken = False
+            if not hasattr(p, "partname"):
+                broken = True
+            elif not isinstance(p.partname, PackURI):
+                broken = True
+            elif not isinstance(p, XmlPart) and isinstance(p, object):
+                broken = True
+            if broken:
+                print(f"[PATCH_WARN] Removing package.parts[{i}]: {type(p).__name__}, partname type: {type(getattr(p, 'partname', None))}")
+                del doc.part.package.parts[i]
+        after_count = len(doc.part.package.parts)
+        print(f"[PATCH_FIX] Removed {before_count - after_count} broken part(s) from package.parts to enable save.")
+        for idx, part in enumerate(doc.part.package.parts):
+            if isinstance(part, XmlPart):
+                print(f"[PATCH_DEBUG] XmlPart[{idx}]: partname type: {type(part.partname)}, package type: {type(part.package)}")
+                if hasattr(part, "reltype"):
+                    print(f"[PATCH_DEBUG] XmlPart[{idx}]: reltype: {getattr(part, 'reltype', None)}")
     try:
         doc.save(output_docx_path)
         print(f"\nProcessed document saved to '{output_docx_path}'")
