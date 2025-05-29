@@ -12,7 +12,7 @@ ENVIRONMENT="development"
 #-----------------------------------------------------------------------------
 AZURE_OPENAI_API_KEY="REDACTED"
 AZURE_OPENAI_ENDPOINT="https://ai-sandbox-instance.openai.azure.com/"
-AZURE_OPENAI_API_VERSION="2024-02-15-preview" # Use your actual valid API version
+AZURE_OPENAI_API_VERSION=2025-03-01-preview # Use your actual valid API version
 
 AZURE_OPENAI_DEFAULT_DEPLOYMENT_NAME="gpt-4o-mini" # Your deployment ID for the default/desired model
 AZURE_OPENAI_GPT4_DEPLOYMENT_NAME="gpt-4o-mini"    # Your deployment ID for a GPT-4 class model (can be same or different)

@@ -3,7 +3,8 @@ import requests
 import streamlit as st
 
 # Configuration for the FastAPI backend URL
-BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000").rstrip("/")
+BACKEND_URL = os.getenv("BACKEND_URL", "http://127.0.0.1:8000").rstrip("/")
+#BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000").rstrip("/")
 PROCESS_ENDPOINT = f"{BACKEND_URL}/process-document/"
 DOWNLOAD_ENDPOINT_PREFIX = f"{BACKEND_URL}/download"
 ANALYZE_ENDPOINT = f"{BACKEND_URL}/analyze-document/"
