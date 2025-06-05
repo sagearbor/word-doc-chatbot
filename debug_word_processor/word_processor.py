@@ -5,8 +5,7 @@ import re
 import json
 import os
 import traceback
-import zipfile # Added for raw XML extraction
-from docx import Document
+from docx import Document # Ensure this is available
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from typing import List, Dict, Tuple, Optional, Any
@@ -23,8 +22,7 @@ ERROR_LOG_FILENAME_BASE = "change_log"
 HIGHLIGHT_COLOR_AMBIGUOUS_SKIPPED = "orange"
 ALLOWED_POST_BOUNDARY_PUNCTUATION = {',', ';', '.'}
 
-# --- XML Helper Functions ---
-# ... (keep existing create_del_element, create_ins_element, create_run_element_with_text) ...
+# --- XML Helper Functions --- (Assumed unchanged from your working version)
 def create_del_element(author="Python Program", date_time=None):
     if date_time is None: date_time = datetime.datetime.now(datetime.timezone.utc)
     del_el = OxmlElement('w:del')
@@ -71,38 +69,45 @@ def _get_element_style_template_run(element_info_item_el, fallback_style_run):
         if r_child is not None: return r_child
     return fallback_style_run if fallback_style_run is not None else OxmlElement('w:r')
 
-
+# _build_visible_text_map IS THE MOST LIKELY CANDIDATE FOR THE "$10" vs "$101" discrepancy
 def _build_visible_text_map(paragraph) -> Tuple[str, List[Dict[str, Any]]]:
-    # ... (keep existing _build_visible_text_map) ...
     elements_map = []
     current_text_offset = 0
+    # Iterating over a list of paragraph children. paragraph._p is the lxml element for the paragraph.
     for p_child_idx_loop, p_child_element in enumerate(list(paragraph._p)):
-        text_contribution = ""
+        text_contribution = "" # Reset for each direct child of <p>
         element_type = "other"
-        if p_child_element.tag == qn("w:r"):
+
+        if p_child_element.tag == qn("w:r"): # Normal run
             element_type = "r"
-            if p_child_element.find(qn('w:delText')) is None:
+            if p_child_element.find(qn('w:delText')) is None: # Not part of a w:del wrapping this run
                 for t_node in p_child_element.findall(qn('w:t')):
-                    if t_node.text is not None: text_contribution += t_node.text
+                    if t_node.text is not None: text_contribution += t_node.text # Check for None
                 if p_child_element.find(qn('w:tab')) is not None: text_contribution += '\t'
-        elif p_child_element.tag == qn("w:ins"):
+        elif p_child_element.tag == qn("w:ins"): # An insertion block
             element_type = "ins"
+            # Insertions contain runs (w:r) which in turn contain text (w:t)
             for r_in_ins in p_child_element.findall(qn('w:r')):
-                if r_in_ins.find(qn('w:delText')) is None:
+                if r_in_ins.find(qn('w:delText')) is None: # Not a deletion within an insertion
                     for t_in_ins in r_in_ins.findall(qn('w:t')):
-                        if t_in_ins.text is not None: text_contribution += t_in_ins.text
+                        if t_in_ins.text is not None: text_contribution += t_in_ins.text # Check for None
                     if r_in_ins.find(qn('w:tab')) is not None: text_contribution += '\t'
-        elif p_child_element.tag == qn("w:del"):
+        elif p_child_element.tag == qn("w:del"): # A deletion block
             element_type = "del"
-            pass
+            # Text inside w:del>w:r>w:delText should be ignored for visible map
+            # The current logic doesn't explicitly add a case for w:del to add nothing,
+            # so text_contribution remains "" which is correct.
+            pass # Explicitly do nothing for w:del text itself
         elif p_child_element.tag == qn("w:hyperlink"):
              element_type = "hyperlink"
              for r_in_hyperlink in p_child_element.findall(qn('w:r')):
                 if r_in_hyperlink.find(qn('w:delText')) is None:
                     for t_in_hyperlink in r_in_hyperlink.findall(qn('w:t')):
-                        if t_in_hyperlink.text is not None: text_contribution += t_in_hyperlink.text
+                        if t_in_hyperlink.text is not None: text_contribution += t_in_hyperlink.text # Check for None
                     if r_in_hyperlink.find(qn('w:tab')) is not None: text_contribution += '\t'
-        if text_contribution:
+        # Add other element types here if necessary (e.g., w:smartTag, w:sdt, etc.)
+
+        if text_contribution: # Only add if text was actually found for this p_child_element
             elements_map.append({
                 'el': p_child_element, 'text': text_contribution,
                 'p_child_idx': p_child_idx_loop, 'doc_start_offset': current_text_offset,
@@ -111,108 +116,29 @@ def _build_visible_text_map(paragraph) -> Tuple[str, List[Dict[str, Any]]]:
                 'original_date': p_child_element.get(qn('w:date')) if element_type in ["ins", "del"] else None
             })
             current_text_offset += len(text_contribution)
+
     final_text = "".join(item['text'] for item in elements_map)
+    # log_debug(f"_build_visible_text_map produced: '{final_text[:100]}...'") # Optional: log output of this func
     return final_text, elements_map
-
-
-# --- NEW/MODIFIED FUNCTIONS FOR ANALYSIS ---
-
-def extract_tracked_changes_as_text(input_docx_path: str) -> str:
-    """
-    Extracts a textual summary of tracked insertions and deletions from a DOCX file.
-    (For Approach 1: Concise summary to LLM)
-    """
-    try:
-        doc = Document(input_docx_path)
-    except Exception as e:
-        print(f"Error opening Word document '{input_docx_path}' for change extraction: {e}")
-        return f"Error_Internal: Could not open document {os.path.basename(input_docx_path)} to extract changes. Details: {str(e)}"
-
-    changes_summary_lines = ["Summary of Tracked Changes Found in the Document:\n"]
-    changes_found_in_doc = False
-
-    for para_idx, paragraph in enumerate(doc.paragraphs):
-        para_has_changes = False
-        current_para_changes_lines = []
-
-        for p_child_element in paragraph._p: # Iterate over direct children of <w:p>
-            if p_child_element.tag == qn("w:ins"):
-                inserted_text_parts = []
-                author = p_child_element.get(qn('w:author'), "Unknown Author")
-                date_str = p_child_element.get(qn('w:date'), "")
-                if date_str and 'T' in date_str: date_str = date_str.split('T')[0] # Simplify date
-
-                for r_in_ins in p_child_element.findall(qn('w:r')):
-                    for t_in_ins in r_in_ins.findall(qn('w:t')):
-                        if t_in_ins.text: inserted_text_parts.append(t_in_ins.text)
-                if inserted_text_parts:
-                    current_para_changes_lines.append(f"  - Inserted: \"{''.join(inserted_text_parts)}\" (By: {author}{f', around {date_str}' if date_str else ''})")
-                    para_has_changes = True
-                    changes_found_in_doc = True
-
-            elif p_child_element.tag == qn("w:del"):
-                deleted_text_parts = []
-                author = p_child_element.get(qn('w:author'), "Unknown Author")
-                date_str = p_child_element.get(qn('w:date'), "")
-                if date_str and 'T' in date_str: date_str = date_str.split('T')[0] # Simplify date
-                    
-                for r_in_del in p_child_element.findall(qn('w:r')):
-                    for del_text_node in r_in_del.findall(qn('w:delText')):
-                        if del_text_node.text: deleted_text_parts.append(del_text_node.text)
-                if deleted_text_parts:
-                    current_para_changes_lines.append(f"  - Deleted: \"{''.join(deleted_text_parts)}\" (By: {author}{f', around {date_str}' if date_str else ''})")
-                    para_has_changes = True
-                    changes_found_in_doc = True
-        
-        if para_has_changes:
-            changes_summary_lines.append(f"In Paragraph {para_idx + 1}:")
-            changes_summary_lines.extend(current_para_changes_lines)
-            changes_summary_lines.append("")
-
-    if not changes_found_in_doc:
-        return "No tracked insertions or deletions were found in this document."
-    return "\n".join(changes_summary_lines)
-
-def get_document_xml_raw_text(docx_path: str) -> str:
-    """
-    Extracts the raw content of word/document.xml from a DOCX file.
-    (For Approach 2: Raw XML to LLM)
-    """
-    try:
-        with zipfile.ZipFile(docx_path, 'r') as docx_zip:
-            if 'word/document.xml' in docx_zip.namelist():
-                with docx_zip.open('word/document.xml') as xml_file:
-                    xml_content_bytes = xml_file.read()
-                    return xml_content_bytes.decode('utf-8', errors='ignore') # Ignore decoding errors for robustness
-            else:
-                return "Error_Internal: word/document.xml not found in the DOCX archive."
-    except Exception as e:
-        return f"Error_Internal: Exception while processing DOCX to get raw XML: {str(e)}"
-
-# --- END NEW/MODIFIED FUNCTIONS FOR ANALYSIS ---
 
 
 def _add_comment_to_paragraph(paragraph, current_para_idx: int, comment_text: str, author_name: str,
                              ambiguous_or_failed_changes_log: List[Dict],
                              edit_item_details_for_log: Optional[Dict] = None):
-    # ... (keep existing _add_comment_to_paragraph) ...
     if not ADD_COMMENTS_TO_CHANGES or not comment_text: return
     log_ctx = {"paragraph_index": current_para_idx, **(edit_item_details_for_log or {})}
     try:
         author_display = f"{author_name} (LLM)"
         name_parts = [w for w in author_display.replace("(", "").replace(")", "").split() if w]
         initials = (name_parts[0][0] + name_parts[1][0]).upper() if len(name_parts) >= 2 else (name_parts[0][:2].upper() if name_parts else "AI")
-        paragraph.add_comment(text=comment_text, author=author_display, initials=initials) 
+        paragraph.add_comment(comment_text, author=author_display, initials=initials)
         log_debug(f"P{current_para_idx+1}: Added comment: '{comment_text[:30]}...'.")
     except AttributeError as e_attr:
-        log_message = f"Comment addition failed for P{current_para_idx+1} (AttributeError): {e_attr}. Object type: {type(paragraph)}. Comment: '{comment_text[:50]}...'"
-        log_debug(f"CRITICAL_WARNING - {log_message}")
-        ambiguous_or_failed_changes_log.append({**log_ctx, "issue": log_message, "type": "CriticalWarning"})
+        ambiguous_or_failed_changes_log.append({**log_ctx, "issue": f"Comment addition failed (AttributeError): {e_attr}. Comment: {comment_text}", "type": "CriticalWarning"})
+        log_debug(f"P{current_para_idx+1}: CRITICAL_WARNING - Could not add comment ('{comment_text[:30]}...') due to AttributeError: {e_attr}.")
     except Exception as e_gen:
-        log_message = f"Comment addition failed for P{current_para_idx+1} (General Error): {e_gen}. Comment: '{comment_text[:50]}...'"
-        log_debug(f"WARNING - {log_message}")
-        ambiguous_or_failed_changes_log.append({**log_ctx, "issue": log_message, "type": "Warning"})
-
+        ambiguous_or_failed_changes_log.append({**log_ctx, "issue": f"Comment addition failed: {e_gen}. Comment: {comment_text}", "type": "Warning"})
+        log_debug(f"P{current_para_idx+1}: WARNING - Could not add comment ('{comment_text[:30]}...'). Error: {e_gen}")
 
 def _apply_markup_to_span(
         paragraph_obj, current_para_idx: int, global_start: int, global_end: int, text_to_markup: str,
@@ -220,20 +146,23 @@ def _apply_markup_to_span(
         initial_fallback_style_run: Optional[OxmlElement],
         ambiguous_or_failed_changes_log: List[Dict], edit_item_details: Dict
     ) -> bool:
-    # ... (keep existing _apply_markup_to_span) ...
     log_debug(f"P{current_para_idx+1}: Applying markup: Highlight '{text_to_markup}' ({highlight_color}) at {global_start}-{global_end}, Comment: '{comment_text[:30]}...'")
     current_visible_text, current_elements_map = _build_visible_text_map(paragraph_obj)
+
     if not (0 <= global_start < global_end <= len(current_visible_text)):
         log_debug(f"P{current_para_idx+1}: Invalid span {global_start}-{global_end} for markup in text of len {len(current_visible_text)}. Skipping markup.")
         ambiguous_or_failed_changes_log.append({"paragraph_index": current_para_idx, "issue": f"Markup skipped: Invalid span {global_start}-{global_end} for text len {len(current_visible_text)}", **edit_item_details, "type": "MarkupError"})
         return False
+
     text_actually_at_span = current_visible_text[global_start:global_end]
     if text_actually_at_span != text_to_markup:
         log_debug(f"P{current_para_idx+1}: Markup text mismatch. Expected '{text_to_markup}', found '{text_actually_at_span}'. Skipping markup.")
         ambiguous_or_failed_changes_log.append({"paragraph_index": current_para_idx, "issue": f"Markup skipped: Text mismatch. Expected '{text_to_markup}', found '{text_actually_at_span}'", **edit_item_details, "type": "MarkupError"})
         return False
+
     involved_span_element_infos = []
     span_first_style_run = initial_fallback_style_run if initial_fallback_style_run is not None else OxmlElement('w:r')
+
     for item in current_elements_map:
         item_doc_end_offset = item['doc_start_offset'] + len(item['text'])
         if max(item['doc_start_offset'], global_start) < min(item_doc_end_offset, global_end):
@@ -241,6 +170,7 @@ def _apply_markup_to_span(
             if span_first_style_run == initial_fallback_style_run or (span_first_style_run is not None and span_first_style_run.tag != qn('w:r')):
                  current_el_style_run = _get_element_style_template_run(item['el'], initial_fallback_style_run)
                  if current_el_style_run is not None : span_first_style_run = current_el_style_run
+
     if not involved_span_element_infos:
         log_debug(f"P{current_para_idx+1}: Markup failed. No XML elements identified for span {global_start}-{global_end} ('{text_to_markup}').")
         ambiguous_or_failed_changes_log.append({"paragraph_index": current_para_idx, "issue": f"Markup skipped: No XML elements for span '{text_to_markup}'", **edit_item_details, "type": "MarkupError"})
@@ -248,6 +178,7 @@ def _apply_markup_to_span(
     if span_first_style_run is None or span_first_style_run.tag != qn('w:r'):
         span_first_style_run = OxmlElement('w:r')
         log_debug(f"P{current_para_idx+1}: Warning - span_first_style_run for markup was not a w:r after element search, using new default.")
+
     new_xml_sequence = []
     first_item_markup = involved_span_element_infos[0]
     prefix_len_markup = global_start - first_item_markup['doc_start_offset']
@@ -260,6 +191,7 @@ def _apply_markup_to_span(
     suffix_text_markup = last_item_markup['text'][suffix_start_markup:] if suffix_start_markup < len(last_item_markup['text']) else ""
     if suffix_text_markup:
         new_xml_sequence.append(create_run_element_with_text(suffix_text_markup, _get_element_style_template_run(last_item_markup['el'], span_first_style_run)))
+
     p_child_indices_to_remove_markup = sorted(list(set(item['p_child_idx'] for item in involved_span_element_infos)), reverse=True)
     if not p_child_indices_to_remove_markup:
         log_debug(f"P{current_para_idx+1}: Markup failed. No XML parent indices to remove for '{text_to_markup}'.")
@@ -279,23 +211,25 @@ def _apply_markup_to_span(
     _add_comment_to_paragraph(paragraph_obj, current_para_idx, comment_text, author_name, ambiguous_or_failed_changes_log, edit_item_details)
     return True
 
-
 def replace_text_in_paragraph_with_tracked_change(
         current_para_idx: int, paragraph,
         contextual_old_text_llm, specific_old_text_llm, specific_new_text,
         reason_for_change, author, case_sensitive_flag,
         ambiguous_or_failed_changes_log) -> Tuple[str, Optional[List[Dict[str, Any]]]]:
-    # ... (keep existing replace_text_in_paragraph_with_tracked_change) ...
     print(f"[WP_DEBUG] P{current_para_idx+1} replace_text_in_paragraph_with_tracked_change called. DEBUG_MODE: {DEBUG_MODE}")
     if DEBUG_MODE:
       print(f"Attempting in P{current_para_idx+1}: Context='{contextual_old_text_llm[:50]}...', SpecificOld='{specific_old_text_llm}', New='{specific_new_text}'")
+
     if EXTENDED_DEBUG_MODE:
         log_debug(f"P{current_para_idx+1}: Full LLM Context: '{contextual_old_text_llm}'")
         log_debug(f"P{current_para_idx+1}: Full LLM Specific Old: '{specific_old_text_llm}'")
     log_debug(f"P{current_para_idx+1}: Attempting change '{specific_old_text_llm}' to '{specific_new_text}' within LLM context '{contextual_old_text_llm[:30]}...'")
+
     visible_paragraph_text_original_case, elements_map = _build_visible_text_map(paragraph)
-    if DEBUG_MODE or EXTENDED_DEBUG_MODE:
+    # ***** PRINT THE BUILT VISIBLE TEXT FOR THIS PARAGRAPH *****
+    if DEBUG_MODE or EXTENDED_DEBUG_MODE: # Print if any debug is on
         print(f"[WP_DEBUG] P{current_para_idx+1} _build_visible_text_map output: '{visible_paragraph_text_original_case}'")
+
     edit_details_for_log = {
         "contextual_old_text": contextual_old_text_llm,
         "specific_old_text": specific_old_text_llm,
@@ -303,12 +237,16 @@ def replace_text_in_paragraph_with_tracked_change(
         "llm_reason": reason_for_change,
         "visible_text_snippet": visible_paragraph_text_original_case[:100]
     }
+    # ... (rest of replace_text_in_paragraph_with_tracked_change is assumed unchanged from your last working version with extensive debug prints) ...
+    # Ensure it correctly uses visible_paragraph_text_original_case for its operations.
     if not visible_paragraph_text_original_case and (contextual_old_text_llm or specific_old_text_llm):
         log_debug(f"P{current_para_idx+1}: Paragraph is empty or yields no visible text, but an edit was provided. Skipping.");
         return "CONTEXT_NOT_FOUND", None
+
     search_text_in_doc = visible_paragraph_text_original_case if case_sensitive_flag else visible_paragraph_text_original_case.lower()
     search_context_from_llm_processed = contextual_old_text_llm if case_sensitive_flag else contextual_old_text_llm.lower()
     log_debug(f"P{current_para_idx+1}: Current visible paragraph text (len {len(visible_paragraph_text_original_case)}): '{visible_paragraph_text_original_case[:60]}{'...' if len(visible_paragraph_text_original_case)>60 else ''}'")
+
     occurrences_of_context = []
     try:
         for match in re.finditer(re.escape(search_context_from_llm_processed), search_text_in_doc):
@@ -316,43 +254,58 @@ def replace_text_in_paragraph_with_tracked_change(
     except re.error as e:
         ambiguous_or_failed_changes_log.append({"paragraph_index": current_para_idx, "issue": f"Regex error searching for context: {e}", **edit_details_for_log});
         return "REGEX_ERROR_IN_CONTEXT_SEARCH", None
+
     if not occurrences_of_context:
         log_debug(f"P{current_para_idx+1}: LLM Context '{contextual_old_text_llm[:30]}...' not found in paragraph text.");
         return "CONTEXT_NOT_FOUND", None
+
     if len(occurrences_of_context) > 1:
         log_debug(f"P{current_para_idx+1}: LLM Context '{contextual_old_text_llm[:30]}...' is AMBIGUOUS ({len(occurrences_of_context)} found in paragraph).")
         return "CONTEXT_AMBIGUOUS", occurrences_of_context
+
     unique_context_match_info = occurrences_of_context[0]
     actual_context_found_in_doc_str = unique_context_match_info["text"]
     prefix_display = visible_paragraph_text_original_case[max(0, unique_context_match_info['start']-10) : unique_context_match_info['start']]
     suffix_display = visible_paragraph_text_original_case[unique_context_match_info['end'] : min(len(visible_paragraph_text_original_case), unique_context_match_info['end']+10)]
     log_debug(f"P{current_para_idx+1}: Unique LLM context found: '...{prefix_display}[{actual_context_found_in_doc_str}]{suffix_display}...' at {unique_context_match_info['start']}-{unique_context_match_info['end']}")
+
     text_to_search_specific_within = actual_context_found_in_doc_str if case_sensitive_flag else actual_context_found_in_doc_str.lower()
     specific_text_to_find_llm_processed = specific_old_text_llm if case_sensitive_flag else specific_old_text_llm.lower()
+
     try:
         specific_start_in_context = text_to_search_specific_within.index(specific_text_to_find_llm_processed)
     except ValueError:
         log_debug(f"P{current_para_idx+1}: Specific text '{specific_old_text_llm}' NOT FOUND within the unique context '{actual_context_found_in_doc_str}'. Change skipped.")
         ambiguous_or_failed_changes_log.append({"paragraph_index": current_para_idx, "issue": "Specific text not found within unique context.", **edit_details_for_log});
         return "SPECIFIC_TEXT_NOT_IN_CONTEXT", None
+
     actual_specific_old_text_to_delete = actual_context_found_in_doc_str[specific_start_in_context : specific_start_in_context + len(specific_old_text_llm)]
     global_specific_start_offset = unique_context_match_info['start'] + specific_start_in_context
     global_specific_end_offset = global_specific_start_offset + len(actual_specific_old_text_to_delete)
+
     log_debug(f"P{current_para_idx+1}: LLM specific_old_text: '{specific_old_text_llm}' (len {len(specific_old_text_llm)})")
     log_debug(f"P{current_para_idx+1}: Actual specific_old_text_to_delete (from doc): '{actual_specific_old_text_to_delete}' (len {len(actual_specific_old_text_to_delete)})")
     log_debug(f"P{current_para_idx+1}: Global offsets for specific text: {global_specific_start_offset}-{global_specific_end_offset}")
+
     if len(actual_specific_old_text_to_delete) != len(specific_old_text_llm):
         log_debug(f"P{current_para_idx+1}: CRITICAL WARNING! Length mismatch between LLM specific_old_text ('{specific_old_text_llm}') and actual text found in doc to delete ('{actual_specific_old_text_to_delete}'). This will likely cause incorrect changes.")
         ambiguous_or_failed_changes_log.append({"paragraph_index": current_para_idx, "issue": "Length mismatch between LLM specific_old_text and actual text to delete.", "type":"CriticalWarning", **edit_details_for_log})
+
     char_before_specific = visible_paragraph_text_original_case[global_specific_start_offset - 1] if global_specific_start_offset > 0 else None
     char_after_specific = visible_paragraph_text_original_case[global_specific_end_offset] if global_specific_end_offset < len(visible_paragraph_text_original_case) else None
-    is_start_boundary_ok = (global_specific_start_offset == 0 or (char_before_specific is not None and char_before_specific.isspace()))
-    is_end_boundary_ok = (global_specific_end_offset == len(visible_paragraph_text_original_case) or (char_after_specific is not None and (char_after_specific.isspace() or char_after_specific in ALLOWED_POST_BOUNDARY_PUNCTUATION)))
+    is_start_boundary_ok = (global_specific_start_offset == 0 or
+                            (char_before_specific is not None and char_before_specific.isspace()))
+    is_end_boundary_ok = (global_specific_end_offset == len(visible_paragraph_text_original_case) or
+                          (char_after_specific is not None and
+                           (char_after_specific.isspace() or char_after_specific in ALLOWED_POST_BOUNDARY_PUNCTUATION)))
+
     if not (is_start_boundary_ok and is_end_boundary_ok):
-        log_message = (f"P{current_para_idx+1}: Specific text '{actual_specific_old_text_to_delete}' is NOT validly bounded. " f"Preceded by: '{char_before_specific}', Followed by: '{char_after_specific}'. Change skipped.")
+        log_message = (f"P{current_para_idx+1}: Specific text '{actual_specific_old_text_to_delete}' is NOT validly bounded. "
+                       f"Preceded by: '{char_before_specific}', Followed by: '{char_after_specific}'. Change skipped.")
         log_debug(log_message)
         ambiguous_or_failed_changes_log.append({"paragraph_index": current_para_idx, "issue": f"Skipped: Specific text not validly bounded (Prev: '{char_before_specific}', Next: '{char_after_specific}')", **edit_details_for_log})
         return "SKIPPED_INVALID_BOUNDARY", None
+
     involved_element_infos = []
     first_involved_r_element_for_style = None
     for item_map_entry in elements_map:
@@ -361,14 +314,18 @@ def replace_text_in_paragraph_with_tracked_change(
             involved_element_infos.append(item_map_entry)
             if first_involved_r_element_for_style is None:
                 first_involved_r_element_for_style = _get_element_style_template_run(item_map_entry['el'], None)
+
     if not involved_element_infos:
         log_debug(f"P{current_para_idx+1}: XML_MAPPING_FAILED for '{actual_specific_old_text_to_delete}'. No XML elements correspond to the identified text span.")
         ambiguous_or_failed_changes_log.append({"paragraph_index": current_para_idx, "issue": "XML mapping failed for specific text.", **edit_details_for_log});
         return "XML_MAPPING_FAILED", None
+
     if first_involved_r_element_for_style is None:
         first_involved_r_element_for_style = OxmlElement('w:r')
         log_debug(f"P{current_para_idx+1}: WARNING - No template <w:r> for styling the change. Using a new default <w:r>.")
+
     log_debug(f"P{current_para_idx+1}: Modifying {len(involved_element_infos)} raw XML elements for the change of '{actual_specific_old_text_to_delete}' (validly bounded).")
+
     new_xml_elements_for_paragraph = []
     first_involved_item_details = involved_element_infos[0]
     prefix_len_in_first_item = global_specific_start_offset - first_involved_item_details['doc_start_offset']
@@ -378,8 +335,10 @@ def replace_text_in_paragraph_with_tracked_change(
         prefix_len_in_first_item = 0
     if prefix_len_in_first_item > 0 :
         prefix_text_content = first_involved_item_details['text'][:prefix_len_in_first_item]
+
     log_debug(f"P{current_para_idx+1}: First involved item for change: text='{first_involved_item_details['text']}', doc_start_offset={first_involved_item_details['doc_start_offset']}, type='{first_involved_item_details['type']}'")
     log_debug(f"P{current_para_idx+1}: Calculated prefix_len_in_first_item: {prefix_len_in_first_item}, resulting prefix_text_content: '{prefix_text_content}'")
+
     if prefix_text_content:
         style_run_for_prefix = _get_element_style_template_run(first_involved_item_details['el'], first_involved_r_element_for_style)
         if first_involved_item_details['type'] == 'ins':
@@ -390,28 +349,34 @@ def replace_text_in_paragraph_with_tracked_change(
         else:
             new_xml_elements_for_paragraph.append(create_run_element_with_text(prefix_text_content, style_run_for_prefix))
         log_debug(f"P{current_para_idx+1}: Added prefix '{prefix_text_content}' from first element (type: {first_involved_item_details['type']}).")
+
     change_time = datetime.datetime.now(datetime.timezone.utc)
     del_obj = create_del_element(author=author, date_time=change_time)
     del_run_el = create_run_element_with_text(actual_specific_old_text_to_delete, first_involved_r_element_for_style, is_del_text=True)
     del_obj.append(del_run_el)
     new_xml_elements_for_paragraph.append(del_obj)
     log_debug(f"P{current_para_idx+1}: Added <w:del> for '{actual_specific_old_text_to_delete}'.")
+
     if specific_new_text:
         ins_obj = create_ins_element(author=author, date_time=change_time + datetime.timedelta(seconds=1))
         ins_run_el = create_run_element_with_text(specific_new_text, first_involved_r_element_for_style, is_del_text=False, highlight_color=None)
         ins_obj.append(ins_run_el)
         new_xml_elements_for_paragraph.append(ins_obj)
         log_debug(f"P{current_para_idx+1}: Added <w:ins> for '{specific_new_text}'.")
+
     last_involved_item_details = involved_element_infos[-1]
     suffix_start_in_last_item = global_specific_end_offset - last_involved_item_details['doc_start_offset']
     suffix_text_content = ""
     if suffix_start_in_last_item < 0:
         log_debug(f"P{current_para_idx+1}: WARNING: suffix_start_in_last_item ({suffix_start_in_last_item}) is negative. Clamping. This might indicate an offset issue.")
         suffix_start_in_last_item = len(last_involved_item_details['text'])
+
     if suffix_start_in_last_item < len(last_involved_item_details['text']):
         suffix_text_content = last_involved_item_details['text'][suffix_start_in_last_item:]
+
     log_debug(f"P{current_para_idx+1}: Last involved item for change: text='{last_involved_item_details['text']}', doc_start_offset={last_involved_item_details['doc_start_offset']}, type='{last_involved_item_details['type']}'")
     log_debug(f"P{current_para_idx+1}: Calculated suffix_start_in_last_item: {suffix_start_in_last_item}, resulting suffix_text_content: '{suffix_text_content}'")
+
     if suffix_text_content:
         style_run_for_suffix = _get_element_style_template_run(last_involved_item_details['el'], first_involved_r_element_for_style)
         if last_involved_item_details['type'] == 'ins':
@@ -422,11 +387,14 @@ def replace_text_in_paragraph_with_tracked_change(
         else:
             new_xml_elements_for_paragraph.append(create_run_element_with_text(suffix_text_content, style_run_for_suffix))
         log_debug(f"P{current_para_idx+1}: Added suffix '{suffix_text_content}' from last element (type: {last_involved_item_details['type']}).")
+
     p_child_indices_to_remove = sorted(list(set(item['p_child_idx'] for item in involved_element_infos)), reverse=True)
+
     if not p_child_indices_to_remove:
         log_debug(f"P{current_para_idx+1}: XML_REMOVAL_ERROR_NO_INDICES. No paragraph child indices identified for removal. This change cannot be applied. For text '{actual_specific_old_text_to_delete}'.")
         ambiguous_or_failed_changes_log.append({"paragraph_index": current_para_idx, "issue": "XML_REMOVAL_ERROR_NO_INDICES: No elements to remove.", **edit_details_for_log});
         return "XML_REMOVAL_ERROR_NO_INDICES", None
+
     insertion_point_xml = p_child_indices_to_remove[-1]
     for p_idx_to_remove_loop in p_child_indices_to_remove:
         try:
@@ -438,15 +406,16 @@ def replace_text_in_paragraph_with_tracked_change(
             log_debug(log_message)
             ambiguous_or_failed_changes_log.append({"paragraph_index": current_para_idx, "issue": f"XML element removal error at index {p_idx_to_remove_loop}: {e_remove}", "type": "CriticalError", **edit_details_for_log})
             return "XML_REMOVAL_ERROR", None
+
     for i, new_el in enumerate(new_xml_elements_for_paragraph):
         paragraph._p.insert(insertion_point_xml + i, new_el)
     log_debug(f"P{current_para_idx+1}: Inserted {len(new_xml_elements_for_paragraph)} new XML elements at original index {insertion_point_xml}.")
+
     comment_to_add = reason_for_change
     if not specific_new_text:
         comment_to_add = f"Deleted: '{actual_specific_old_text_to_delete}'. Reason: {reason_for_change}"
     _add_comment_to_paragraph(paragraph, current_para_idx, comment_to_add, author, ambiguous_or_failed_changes_log, edit_details_for_log)
     return "SUCCESS", None
-
 
 def process_document_with_edits(
     input_docx_path: str, output_docx_path: str, edits_to_make: List[Dict],
@@ -456,47 +425,61 @@ def process_document_with_edits(
     case_sensitive_flag: bool = True,
     add_comments_param: bool = True
 ) -> Tuple[bool, Optional[str], List[Dict], int]:
-    # ... (keep existing process_document_with_edits, ensuring it uses the global DEBUG_MODE flags correctly) ...
+
+    # ***** NEW DIAGNOSTIC PRINT BLOCK *****
     print("\n--- VERIFYING TEXT EXTRACTION (in process_document_with_edits) ---")
     try:
         temp_doc_for_verify = Document(input_docx_path)
         for i, p_obj in enumerate(temp_doc_for_verify.paragraphs):
+            # Print python-docx's interpretation of paragraph text
             print(f"PARAGRAPH {i+1} (python-docx p.text): '{p_obj.text}'")
+            # Call your map builder and print its string output
             map_text, _ = _build_visible_text_map(p_obj)
             print(f"PARAGRAPH {i+1} (_build_visible_text_map): '{map_text}'")
-            if p_obj.text != map_text:
+            if p_obj.text != map_text: # Compare the two
                 print(f"    !!!! MISMATCH FOUND for P{i+1} !!!!")
             print("---")
     except Exception as e_verify:
         print(f"ERROR during text extraction verification: {e_verify}")
     print("--- END VERIFYING TEXT EXTRACTION ---\n")
+    # ***** END NEW DIAGNOSTIC PRINT BLOCK *****
+
+
     error_log_file_path: Optional[str] = None
     global DEBUG_MODE, EXTENDED_DEBUG_MODE, CASE_SENSITIVE_SEARCH, ADD_COMMENTS_TO_CHANGES
     DEBUG_MODE = debug_mode_flag
     EXTENDED_DEBUG_MODE = extended_debug_mode_flag
     CASE_SENSITIVE_SEARCH = case_sensitive_flag
     ADD_COMMENTS_TO_CHANGES = add_comments_param
+
     print(f"[WP_DEBUG] process_document_with_edits called. Global DEBUG_MODE: {DEBUG_MODE}, ExtDEBUG_MODE: {EXTENDED_DEBUG_MODE}, AddComments: {ADD_COMMENTS_TO_CHANGES}, CaseSensitive: {CASE_SENSITIVE_SEARCH}")
+    # ... (rest of the function from your last working version)
     log_debug(f"Script starting. Input: {input_docx_path}, Output: {output_docx_path}")
     log_debug(f"Settings - Debug:{DEBUG_MODE}, ExtDebug:{EXTENDED_DEBUG_MODE}, CaseSensitive:{CASE_SENSITIVE_SEARCH}, AddComments:{ADD_COMMENTS_TO_CHANGES}, Author:{author_name}")
     log_debug(f"Number of edits to attempt: {len(edits_to_make)}")
+
     if not isinstance(edits_to_make, list) or not all(isinstance(item,dict) for item in edits_to_make):
         return False, error_log_file_path, [{"issue": "FATAL: Edits must be a list of dictionaries."}], 0
+
     ambiguous_or_failed_changes_log: List[Dict] = []
     try:
         doc = Document(input_docx_path)
         log_debug(f"Successfully opened '{input_docx_path}'")
     except Exception as e:
         return False, error_log_file_path, [{"issue": f"FATAL: Error opening Word document '{input_docx_path}': {e}"}], 0
+
     edits_successfully_applied_count = 0
+
     for para_idx, paragraph_obj in enumerate(doc.paragraphs):
         _initial_para_text_for_style, _initial_para_elements_map_for_style = _build_visible_text_map(paragraph_obj)
         fallback_style_run_for_markup = OxmlElement('w:r')
         if _initial_para_elements_map_for_style:
             first_r_el_in_para = next((item['el'] for item in _initial_para_elements_map_for_style if item['el'].tag == qn('w:r')), None)
-            if first_r_el_in_para is not None:
+            if first_r_el_in_para is not None: # Applied FutureWarning fix
                 fallback_style_run_for_markup = _get_element_style_template_run(first_r_el_in_para, fallback_style_run_for_markup)
+
         log_debug(f"\n--- Processing Paragraph {para_idx+1} (Initial Text Snapshot: '{paragraph_obj.text[:60]}{'...' if len(paragraph_obj.text)>60 else ''}') ---")
+
         for edit_item_idx, edit_item in enumerate(list(edits_to_make)):
             log_debug(f"P{para_idx+1}: Attempting edit item {edit_item_idx+1} ('{edit_item.get('specific_old_text')}' -> '{edit_item.get('specific_new_text')}')")
             required_keys = ["contextual_old_text", "specific_old_text", "reason_for_change"]
@@ -505,6 +488,7 @@ def process_document_with_edits(
                 log_debug(log_message)
                 ambiguous_or_failed_changes_log.append({"paragraph_index": para_idx, "edit_item_index": edit_item_idx +1, "issue": "Invalid edit item structure.", "edit_item_snippet": str(edit_item)[:100]})
                 continue
+
             status, data_from_replace = "INIT", None
             current_edit_details_for_log = {
                 "contextual_old_text": edit_item["contextual_old_text"],
@@ -512,6 +496,7 @@ def process_document_with_edits(
                 "specific_new_text": edit_item.get("specific_new_text",""),
                 "llm_reason": edit_item["reason_for_change"]
             }
+
             try:
                 status, data_from_replace = replace_text_in_paragraph_with_tracked_change(
                     para_idx, paragraph_obj,
@@ -527,10 +512,13 @@ def process_document_with_edits(
                 log_debug(log_message)
                 if DEBUG_MODE: log_debug(traceback.format_exc())
                 ambiguous_or_failed_changes_log.append({
-                    "paragraph_index": para_idx, "edit_item_index": edit_item_idx +1,
-                    "issue": f"Unhandled exception in replacement call: {e_replace_call}", "type": "CriticalError",
+                    "paragraph_index": para_idx,
+                    "edit_item_index": edit_item_idx +1,
+                    "issue": f"Unhandled exception in replacement call: {e_replace_call}",
+                    "type": "CriticalError",
                     **current_edit_details_for_log
                 })
+
             if status == "SUCCESS":
                 success_msg = f"SUCCESS: P{para_idx+1}: Applied change for context '{edit_item['contextual_old_text'][:30]}...', specific '{edit_item['specific_old_text']}'. Reason: {edit_item['reason_for_change']}"
                 print(success_msg)
@@ -555,7 +543,8 @@ def process_document_with_edits(
                                 specific_end_abs = specific_start_abs + len(specific_text_to_markup_val)
                                 spans_to_markup_this_edit_item.append({"start":specific_start_abs, "end":specific_end_abs, "text":specific_text_to_markup_val})
                                 current_offset_in_ctx = found_idx_in_ctx + len(specific_text_to_markup_val)
-                            except ValueError: break
+                            except ValueError:
+                                break
                     spans_to_markup_this_edit_item.sort(key=lambda x:x["start"], reverse=True)
                     applied_any_markup_for_this_ambiguity = False
                     for span_info in spans_to_markup_this_edit_item:
@@ -563,24 +552,30 @@ def process_document_with_edits(
                                                span_info["start"], span_info["end"], span_info["text"],
                                                HIGHLIGHT_COLOR_AMBIGUOUS_SKIPPED,
                                                f"Skipped change: Ambiguous context for '{edit_item['specific_old_text']}'. This is one of multiple occurrences. LLM Reason for original change: {edit_item['reason_for_change']}",
-                                               author_name, fallback_style_run_for_markup,
-                                               ambiguous_or_failed_changes_log, current_edit_details_for_log):
+                                               author_name,
+                                               fallback_style_run_for_markup,
+                                               ambiguous_or_failed_changes_log,
+                                               current_edit_details_for_log):
                             applied_any_markup_for_this_ambiguity = True
                     if applied_any_markup_for_this_ambiguity:
                         ambiguous_or_failed_changes_log.append({"paragraph_index":para_idx, "issue": f"CONTEXT_AMBIGUOUS: Marked {len(spans_to_markup_this_edit_item)} instance(s) of '{edit_item['specific_old_text']}' with orange highlight.", "type": "Info", **current_edit_details_for_log})
                     else:
-                        log_debug(f"P{para_idx+1}: CONTEXT_AMBIGUOUS status, but no specific text instances were marked up for '{edit_item['specific_old_text']}'.")
+                        log_debug(f"P{para_idx+1}: CONTEXT_AMBIGUOUS status, but no specific text instances were marked up for '{edit_item['specific_old_text']}'. This could be due to no specific text within found contexts or markup failure.")
                         ambiguous_or_failed_changes_log.append({"paragraph_index":para_idx, "issue": "CONTEXT_AMBIGUOUS, but no markup applied (specific text not in contexts or markup failed).", "type": "Warning", **current_edit_details_for_log})
                 else:
                     log_debug(f"P{para_idx+1}: CONTEXT_AMBIGUOUS status but no occurrence data was returned by replacement function. Edit item: {edit_item}")
                     ambiguous_or_failed_changes_log.append({"paragraph_index":para_idx, "issue": "CONTEXT_AMBIGUOUS but no occurrence data returned from replace function.", "type": "Warning", **current_edit_details_for_log})
-            elif status not in ["INIT", "CONTEXT_NOT_FOUND", "REGEX_ERROR_IN_CONTEXT_SEARCH", "SPECIFIC_TEXT_NOT_IN_CONTEXT", "SKIPPED_INVALID_BOUNDARY", "XML_MAPPING_FAILED", "XML_REMOVAL_ERROR_NO_INDICES"]:
+            elif status not in ["INIT", "CONTEXT_NOT_FOUND", "REGEX_ERROR_IN_CONTEXT_SEARCH",
+                                "SPECIFIC_TEXT_NOT_IN_CONTEXT", "SKIPPED_INVALID_BOUNDARY",
+                                "XML_MAPPING_FAILED", "XML_REMOVAL_ERROR_NO_INDICES"]:
                 info_msg = f"INFO: P{para_idx+1}: Edit for context '{edit_item['contextual_old_text'][:30]}...' specific '{edit_item['specific_old_text']}' resulted in status: {status}."
                 print(info_msg)
                 log_debug(info_msg)
-            if status in ["XML_REMOVAL_ERROR", "XML_REMOVAL_ERROR_NO_INDICES", "EXCEPTION_IN_REPLACE_CALL"]:
-                log_debug(f"P{para_idx+1}: Critical error status '{status}' encountered. Halting further edit attempts for THIS PARAGRAPH.")
+            if status in ["XML_REMOVAL_ERROR", "XML_REMOVAL_ERROR_NO_INDICES",
+                          "EXCEPTION_IN_REPLACE_CALL"]: # Removed "CRITICAL_ERROR_BASIC"
+                log_debug(f"P{para_idx+1}: Critical error status '{status}' encountered. Halting further edit attempts for THIS PARAGRAPH to prevent cascading XML issues.")
                 break
+    # ... (rest of process_document_with_edits, including saving and log file writing, is assumed unchanged)
     try:
         doc.save(output_docx_path)
         print(f"\nProcessed document saved to '{output_docx_path}'")
@@ -589,6 +584,7 @@ def process_document_with_edits(
         log_debug(f"FATAL: Error saving document to '{output_docx_path}': {e}")
         ambiguous_or_failed_changes_log.append({"issue": f"FATAL: Error saving document to '{output_docx_path}': {e}", "type":"FatalError"})
         return False, None, ambiguous_or_failed_changes_log, edits_successfully_applied_count
+
     if ambiguous_or_failed_changes_log:
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         log_filename_with_ts = f"{ERROR_LOG_FILENAME_BASE}_{timestamp}.txt"
@@ -610,8 +606,10 @@ def process_document_with_edits(
                 for log_entry in ambiguous_or_failed_changes_log:
                     f.write("-----------------------------------------\n")
                     para_display_index = log_entry.get('paragraph_index', -1)
-                    if isinstance(para_display_index, int) and para_display_index >=0 : para_display_index +=1
-                    else: para_display_index = 'N/A'
+                    if isinstance(para_display_index, int) and para_display_index >=0 :
+                        para_display_index +=1
+                    else:
+                        para_display_index = 'N/A'
                     f.write(f"Paragraph Index (1-based): {para_display_index}\n")
                     f.write(f"Original Visible Text Snippet (at time of processing this item): {log_entry.get('visible_text_snippet', 'N/A')}\n")
                     f.write(f"LLM Context Searched: '{log_entry.get('contextual_old_text', 'N/A')}'\n")
@@ -630,23 +628,29 @@ def process_document_with_edits(
             log_debug(f"ERROR: Could not write to log file '{error_log_file_path}': {e_log}")
             error_log_file_path = None
     else:
-        if not edits_to_make: print(f"No edits were provided to process.")
-        elif edits_successfully_applied_count == len(edits_to_make) and len(edits_to_make) > 0 :
+        if not edits_to_make:
+            print(f"No edits were provided to process.")
+        elif edits_successfully_applied_count == len(edits_to_make) and len(edits_to_make) > 0 : # Added len > 0
              print(f"All {edits_successfully_applied_count} targeted changes were applied successfully. No issues logged.")
         elif edits_successfully_applied_count < len(edits_to_make) and edits_successfully_applied_count > 0:
             print(f"{edits_successfully_applied_count} changes applied. Some of the {len(edits_to_make)} edits may not have found their context, were ambiguous, or skipped. No critical errors logged that prevented saving.")
         elif edits_successfully_applied_count == 0 and len(edits_to_make) > 0:
             print(f"No changes were applied out of {len(edits_to_make)} provided. Edits may not have found their context, were ambiguous, or skipped. No critical errors logged that prevented saving.")
+        else: # No edits to make and none applied (already covered by first condition)
+            pass
         log_debug("No items for error log file as ambiguous_or_failed_changes_log was empty.")
+
     return True, error_log_file_path, ambiguous_or_failed_changes_log, edits_successfully_applied_count
 
 
 if __name__ == '__main__':
-    # ... (keep existing __main__ block) ...
+    # ... (The __main__ block for standalone testing remains unchanged) ...
+    # Ensure to use it for focused testing of word_processor.py with manually crafted (correct) edits_data
     import argparse
     DEFAULT_EDITS_FILE_PATH = "edits_to_apply.json"
-    DEFAULT_INPUT_DOCX_PATH = "sample_input.docx"
-    DEFAULT_OUTPUT_DOCX_PATH = "sample_output_corrected_v3.docx"
+    DEFAULT_INPUT_DOCX_PATH = "sample_input.docx" # Ensure this file exists or is created
+    DEFAULT_OUTPUT_DOCX_PATH = "sample_output_corrected_v3.docx" # New output name
+
     parser = argparse.ArgumentParser(description="Apply tracked changes to a Word document.")
     parser.add_argument("--input", default=DEFAULT_INPUT_DOCX_PATH, help=f"Input DOCX (default: {DEFAULT_INPUT_DOCX_PATH})")
     parser.add_argument("--output", default=DEFAULT_OUTPUT_DOCX_PATH, help=f"Output DOCX (default: {DEFAULT_OUTPUT_DOCX_PATH})")
@@ -659,22 +663,30 @@ if __name__ == '__main__':
     parser.set_defaults(case_sensitive=True)
     parser.add_argument("--nocomments", action="store_false", dest="add_comments", help="Disable adding comments alongside tracked changes.")
     parser.set_defaults(add_comments=True)
+
     args = parser.parse_args()
+
+    # These globals are set here for standalone script run.
+    # When called as a module, process_document_with_edits sets them from its parameters.
     if args.debug: DEBUG_MODE = True
     if args.extended_debug: EXTENDED_DEBUG_MODE = True
+
     edits_data = []
     if args.editsjson:
         try:
             edits_data = json.loads(args.editsjson)
             log_debug(f"Loaded {len(edits_data)} edits from --editsjson argument.")
         except json.JSONDecodeError as e:
-            print(f"FATAL: Error decoding JSON from --editsjson: {e}. Exiting."); exit(1)
+            print(f"FATAL: Error decoding JSON from --editsjson: {e}. Exiting.")
+            exit(1)
     elif args.editsfile:
         try:
-            with open(args.editsfile, 'r', encoding='utf-8') as f: edits_data = json.load(f)
+            with open(args.editsfile, 'r', encoding='utf-8') as f:
+                edits_data = json.load(f)
             log_debug(f"Successfully loaded {len(edits_data)} edits from '{args.editsfile}'.")
         except FileNotFoundError:
             print(f"FATAL: Edits file '{args.editsfile}' not found. Exiting. Create it or use --editsjson.")
+            # Create a dummy edits_to_apply.json if it doesn't exist and we are in debug mode for testing
             if DEBUG_MODE and args.editsfile == DEFAULT_EDITS_FILE_PATH:
                  print(f"Attempting to create dummy '{DEFAULT_EDITS_FILE_PATH}' for testing.")
                  try:
@@ -683,16 +695,24 @@ if __name__ == '__main__':
                         {"contextual_old_text": "last edited by MrArbor, but that name", "specific_old_text": "MrArbor", "specific_new_text": "DrArbor", "reason_for_change": "Test MrArbor from file."},
                         {"contextual_old_text": "Bob started the sentence", "specific_old_text": "Bob", "specific_new_text": "Robert", "reason_for_change": "Test Bob from file."}
                     ]
-                    with open(DEFAULT_EDITS_FILE_PATH, 'w', encoding='utf-8') as df: json.dump(dummy_edits_for_file, df, indent=2)
+                    with open(DEFAULT_EDITS_FILE_PATH, 'w', encoding='utf-8') as df:
+                        json.dump(dummy_edits_for_file, df, indent=2)
                     print(f"Created dummy edits file '{DEFAULT_EDITS_FILE_PATH}'. Please re-run.")
-                 except Exception as e_create_dummy: print(f"Could not create dummy edits file: {e_create_dummy}")
+                 except Exception as e_create_dummy:
+                     print(f"Could not create dummy edits file: {e_create_dummy}")
             exit(1)
-        except json.JSONDecodeError as e: print(f"FATAL: Error decoding JSON from '{args.editsfile}': {e}. Exiting."); exit(1)
-        except Exception as e: print(f"FATAL: An unexpected error occurred while loading '{args.editsfile}': {e}. Exiting."); exit(1)
-    else:
-        if not DEBUG_MODE: DEBUG_MODE = True
+        except json.JSONDecodeError as e:
+            print(f"FATAL: Error decoding JSON from '{args.editsfile}': {e}. Exiting.")
+            exit(1)
+        except Exception as e:
+            print(f"FATAL: An unexpected error occurred while loading '{args.editsfile}': {e}. Exiting.")
+            exit(1)
+    else: # No edits file or JSON string, use internal dummy data for testing
+        if not DEBUG_MODE: DEBUG_MODE = True # Force debug if using dummy data
         print(f"[WP_DEBUG] __main__ args.debug: {args.debug}, global DEBUG_MODE set to: {DEBUG_MODE}")
         log_debug("No edits provided via CLI. Using internal dummy edits for testing.")
+        
+        # This dummy data should target the sample_input.docx created below
         edits_data = [
             {"contextual_old_text": "cost would be $101 , to a new number", "specific_old_text": "$101", "specific_new_text": "$999", "reason_for_change": "Dummy change: Update cost from $101 to $999"},
             {"contextual_old_text": "last edited by MrArbor, but that name", "specific_old_text": "MrArbor", "specific_new_text": "ProfSage", "reason_for_change": "Dummy change: Update MrArbor to ProfSage"},
@@ -701,6 +721,7 @@ if __name__ == '__main__':
             {"contextual_old_text": "changed ok bob", "specific_old_text": "bob", "specific_new_text": "Robert", "reason_for_change": "Dummy change: Update 'bob' (lowercase) to Robert."}
         ]
         log_debug(f"Using {len(edits_data)} internal dummy edits for testing.")
+
         if not os.path.exists(DEFAULT_INPUT_DOCX_PATH):
             print(f"INFO: Dummy input file '{DEFAULT_INPUT_DOCX_PATH}' not found. Creating it for testing.")
             try:
@@ -715,9 +736,21 @@ if __name__ == '__main__':
                 doc_dummy.add_paragraph("The last line was last edited by MrArbor, but that name can change.")
                 doc_dummy.save(DEFAULT_INPUT_DOCX_PATH)
                 print(f"Created dummy input file: '{DEFAULT_INPUT_DOCX_PATH}'")
-            except Exception as e_doc: print(f"FATAL: Could not create dummy input file '{DEFAULT_INPUT_DOCX_PATH}': {e_doc}"); exit(1)
-    if not os.path.exists(args.input): print(f"FATAL: Input file '{args.input}' not found. Exiting."); exit(1)
+            except Exception as e_doc:
+                print(f"FATAL: Could not create dummy input file '{DEFAULT_INPUT_DOCX_PATH}': {e_doc}")
+                exit(1)
+
+    if not os.path.exists(args.input):
+        print(f"FATAL: Input file '{args.input}' not found. Exiting.")
+        exit(1)
+
     process_document_with_edits(
-        args.input, args.output, edits_data, args.author, args.debug,
-        args.extended_debug, args.case_sensitive, args.add_comments
+        args.input,
+        args.output,
+        edits_data,
+        args.author,
+        args.debug, # This sets the global DEBUG_MODE via the function parameter
+        args.extended_debug, # This sets the global EXTENDED_DEBUG_MODE
+        args.case_sensitive,
+        args.add_comments
     )

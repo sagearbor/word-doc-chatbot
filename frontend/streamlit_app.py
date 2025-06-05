@@ -3,221 +3,249 @@ import requests
 import streamlit as st
 
 # Configuration for the FastAPI backend URL
-# Use the BACKEND_URL environment variable when provided so the
-# frontend can talk to a remote API (e.g. on Azure or Render).
-# Default to the local development server.
-BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
-BACKEND_URL = BACKEND_URL.rstrip("/")
+BACKEND_URL = os.getenv("BACKEND_URL", "http://127.0.0.1:8000").rstrip("/")
 PROCESS_ENDPOINT = f"{BACKEND_URL}/process-document/"
-DOWNLOAD_ENDPOINT_PREFIX = f"{BACKEND_URL}/download" # No trailing slash
-ANALYZE_ENDPOINT = f"{BACKEND_URL}/analyze-document/"
-
+DOWNLOAD_ENDPOINT_PREFIX = f"{BACKEND_URL}/download"
+ANALYZE_ENDPOINT = f"{BACKEND_URL}/analyze-document/" # Endpoint for analysis
 
 st.set_page_config(layout="wide", page_title="Word Document Editor")
 
 st.title("📄 Word Document Tracked Changes Assistant")
 st.markdown("""
-Upload a Word document (.docx) and provide instructions for the changes you want.
-The AI will interpret your instructions, and the system will apply them as tracked changes.
+Upload a Word document (.docx). You can either:
+1.  **Analyze existing tracked changes**: Get an AI-generated summary of the tracked changes already in the document.
+2.  **Process new changes**: Provide instructions for new edits, which the AI will interpret and apply as tracked changes.
 You can then download the modified document.
 """)
 
 # --- Session State Initialization ---
-if 'processed_file_url' not in st.session_state:
-    st.session_state.processed_file_url = None
-if 'processed_filename' not in st.session_state:
-    st.session_state.processed_filename = None
-if 'log_content' not in st.session_state:
-    st.session_state.log_content = None
-if 'error_message' not in st.session_state:
-    st.session_state.error_message = None
-if 'processing' not in st.session_state:
-    st.session_state.processing = False
-if 'analysis_content' not in st.session_state:
-    st.session_state.analysis_content = None
+# ... (keep existing session state initializations) ...
+if 'processed_file_url' not in st.session_state: st.session_state.processed_file_url = None
+if 'processed_filename' not in st.session_state: st.session_state.processed_filename = None
+if 'log_content' not in st.session_state: st.session_state.log_content = None
+if 'error_message' not in st.session_state: st.session_state.error_message = None
+if 'status_message' not in st.session_state: st.session_state.status_message = None
+if 'edits_applied_count' not in st.session_state: st.session_state.edits_applied_count = None
+if 'edits_suggested_count' not in st.session_state: st.session_state.edits_suggested_count = None
+if 'processing' not in st.session_state: st.session_state.processing = False
+if 'analysis_content' not in st.session_state: st.session_state.analysis_content = None
+if 'debug_log_from_backend' not in st.session_state: st.session_state.debug_log_from_backend = None
 
 
 with st.sidebar:
     st.header("⚙️ Options")
     uploaded_file = st.file_uploader("1. Upload your .docx file", type=["docx"], key="file_uploader")
 
-    if st.button("🔍 Analyze Document for Suggestions", disabled=st.session_state.processing):
-        if uploaded_file is not None:
-            st.session_state.processing = True
-            with st.spinner("Analyzing document with LLM..."):
-                files = {"file": (uploaded_file.name, uploaded_file.getvalue(), uploaded_file.type)}
-                try:
-                    response = requests.post(ANALYZE_ENDPOINT, files=files, timeout=300)
-                    response.raise_for_status()
-                    analysis_result = response.json().get("analysis", "No analysis returned.")
-                    st.session_state.analysis_content = analysis_result
-                    st.session_state.processed_file_url = None
-                    st.session_state.processed_filename = None
-                    st.session_state.log_content = None
-                    st.success("Analysis complete. See suggestions below.")
-                except Exception as e:
-                    st.session_state.error_message = f"Analysis failed: {e}"
-                    st.error(st.session_state.error_message)
-                finally:
-                    st.session_state.processing = False
-                    st.rerun()
-        else:
-            st.warning("Please upload a .docx file for analysis.")
-    
-    st.subheader("Author for Changes (Optional)")
-    author_name_llm = st.text_input("Name to appear for LLM's changes:", value="AI Reviewer", help="This name will be used as the author for the tracked changes made by the LLM.")
+    st.markdown("---") # Separator
+    st.subheader("A. Analyze Existing Changes")
+    analysis_mode_options = {
+        "Summarize Extracted Changes (Concise Input to AI)": "summary",
+        "Summarize from Raw Document XML (Verbose Input to AI)": "raw_xml"
+    }
+    selected_analysis_mode_display = st.selectbox(
+        "Analysis Method:",
+        options=list(analysis_mode_options.keys()),
+        index=0, # Default to summary (Concise)
+        help="Choose how the document's existing tracked changes are analyzed. 'Concise' sends a pre-processed list of changes. 'Verbose' sends the raw internal XML (can be slow or fail for large/complex docs, but might give more context)."
+    )
+    analysis_mode_payload = analysis_mode_options[selected_analysis_mode_display]
 
-    st.subheader("Search Settings")
-    case_sensitive_search = st.checkbox("Case-sensitive search for text to change", value=True, help="If checked, 'Text' and 'text' are treated as different. If unchecked, they are treated the same.")
-    
-    st.subheader("Tracked Changes Settings")
-    add_comments_to_changes = st.checkbox("Add comments to changes", value=True, help="If checked, the LLM's reason for change will be added as a comment to the tracked change.")
-
-
-user_instructions = st.text_area(
-    "2. Describe the checks or changes you want (e.g., 'Ensure all deadlines are after May 5th, 2024. Correct spelling of Contoso Ltd to Contoso Inc.')",
-    height=150,
-    key="instructions_area"
-)
-
-if st.session_state.analysis_content:
-    st.markdown("**LLM Suggested Improvements:**")
-    st.text_area("Suggestions", value=st.session_state.analysis_content, height=200, disabled=True)
-
-if st.button("✨ Process Document", type="primary", disabled=st.session_state.processing):
-    if uploaded_file is not None and user_instructions:
+    if st.button("🔍 Analyze Existing Tracked Changes", disabled=st.session_state.processing or not uploaded_file, key="analyze_button"):
         st.session_state.processing = True
+        st.session_state.analysis_content = None 
+        st.session_state.error_message = None
+        # Clear other potentially irrelevant messages from process document
+        st.session_state.processed_file_url = None
+        st.session_state.log_content = None
+        st.session_state.status_message = None
+
+
+        with st.spinner(f"Analyzing with '{selected_analysis_mode_display}' method... This may take a moment."):
+            files = {"file": (uploaded_file.name, uploaded_file.getvalue(), uploaded_file.type)}
+            # Pass analysis_mode as form data
+            form_data = {"analysis_mode": analysis_mode_payload}
+            try:
+                # Timeout can be crucial here, especially for raw_xml mode
+                response = requests.post(ANALYZE_ENDPOINT, files=files, data=form_data, timeout=120) # Increased timeout
+                response.raise_for_status() # Will raise an HTTPError for bad responses (4xx or 5xx)
+                
+                analysis_result = response.json().get("analysis", "No analysis content returned.")
+                
+                # Check for specific error markers from backend
+                if analysis_result.startswith("Error_"):
+                    st.session_state.error_message = f"Analysis Error: {analysis_result.replace('Error_Internal:', '').replace('Error_AI:', '').replace('Error_Input:', '').replace('Error_Server:', '')}"
+                    st.session_state.analysis_content = None # Clear any partial content
+                else:
+                    st.session_state.analysis_content = analysis_result
+                    st.success("Analysis of existing changes complete!")
+
+            except requests.exceptions.HTTPError as errh:
+                error_body = "Could not parse error response."
+                try: error_body = errh.response.json().get("detail", errh.response.text)
+                except ValueError: error_body = errh.response.text if errh.response.text else "Http Error with no details."
+                st.session_state.error_message = f"Analysis failed (HTTP Error): {errh.response.status_code} - {error_body}"
+            except requests.exceptions.ConnectionError as errc:
+                st.session_state.error_message = f"Analysis failed (Connection Error): {errc}\nIs the backend server running at {BACKEND_URL}?"
+            except requests.exceptions.Timeout:
+                st.session_state.error_message = "Analysis failed (Timeout Error): The request took too long. The 'Raw XML' mode can be slow for large files."
+            except Exception as e:
+                st.session_state.error_message = f"Analysis failed (Unexpected Error): {str(e)}"
+            finally:
+                st.session_state.processing = False
+                # st.rerun() # Rerun to update UI based on new session state
+                # No, don't rerun here yet, let the main page display logic handle it.
+
+    st.markdown("---") # Separator
+    st.subheader("B. Process New Changes")
+    author_name_llm = st.text_input(
+        "Name for AI's new changes:", value="AI Reviewer",
+        help="This name will be used as the author for new tracked changes made by the AI based on your instructions below."
+    )
+    case_sensitive_search = st.checkbox("Case-sensitive search for new changes", value=True)
+    add_comments_to_changes = st.checkbox("Add AI comments to new changes", value=True)
+    
+    st.subheader("Debugging (for new changes processing)")
+    debug_level_options = {
+        "Off": ("off", "No server-side debugging."),
+        "Standard Debugging": ("standard", "Logs detailed processing steps."),
+        "Extended Debugging": ("extended", "Logs very verbose details (implies Standard).")
+    }
+    debug_level_choice = st.selectbox(
+        "Server Debugging Level:", options=list(debug_level_options.keys()), index=0,
+        format_func=lambda x: f"{x} - {debug_level_options[x][1]}"
+    )
+    debug_mode_payload = False
+    extended_debug_mode_payload = False
+    if debug_level_options[debug_level_choice][0] == "standard": debug_mode_payload = True
+    elif debug_level_options[debug_level_choice][0] == "extended":
+        debug_mode_payload = True
+        extended_debug_mode_payload = True
+    
+# --- Main Page Content ---
+cols_main = st.columns([0.6, 0.4]) # Adjust column proportions as needed
+
+with cols_main[0]: # Left column for instructions and processing
+    st.header("✍️ Instruct AI for New Changes")
+    user_instructions = st.text_area(
+        "Describe the checks or changes you want the AI to make:",
+        height=150, key="instructions_area",
+        placeholder="e.g., 'Change all instances of Mr. Smith to Ms. Jones. Update project deadline from 2024-01-01 to 2024-02-15.'"
+    )
+
+    if st.button("✨ Process Document with New Changes", type="primary", 
+                  disabled=st.session_state.processing or not uploaded_file or not user_instructions, 
+                  key="process_button"):
+        st.session_state.processing = True
+        # Clear previous results from both analysis and processing
         st.session_state.processed_file_url = None
         st.session_state.processed_filename = None
         st.session_state.log_content = None
         st.session_state.error_message = None
-        st.session_state.analysis_content = None
-        
-        with st.spinner("Processing your document... This may take a moment. Please wait."):
+        st.session_state.status_message = None
+        st.session_state.edits_applied_count = None
+        st.session_state.edits_suggested_count = None
+        st.session_state.analysis_content = None # Clear analysis content too
+        st.session_state.debug_log_from_backend = None
+
+        with st.spinner("Processing your document for new changes... This may take a moment."):
             files = {"file": (uploaded_file.name, uploaded_file.getvalue(), uploaded_file.type)}
             payload = {
-                "instructions": user_instructions,
-                "author_name": author_name_llm,
-                "case_sensitive": case_sensitive_search,
-                "add_comments": add_comments_to_changes
+                "instructions": user_instructions, "author_name": author_name_llm,
+                "case_sensitive": case_sensitive_search, "add_comments": add_comments_to_changes,
+                "debug_mode": debug_mode_payload, "extended_debug_mode": extended_debug_mode_payload
             }
-            
             try:
-                response = requests.post(PROCESS_ENDPOINT, files=files, data=payload, timeout=300) # 5 min timeout
-                response.raise_for_status()  # Raises an HTTPError for bad responses (4XX or 5XX)
-                
+                response = requests.post(PROCESS_ENDPOINT, files=files, data=payload, timeout=300)
+                response.raise_for_status()
                 result = response.json()
                 st.session_state.processed_filename = result.get("processed_filename")
                 st.session_state.processed_file_url = f"{DOWNLOAD_ENDPOINT_PREFIX}/{st.session_state.processed_filename}" if st.session_state.processed_filename else None
                 st.session_state.log_content = result.get("log_content", "No log content received.")
-                
-                st.success("Document processing complete!")
-
+                st.session_state.status_message = result.get("status_message", "Processing finished.")
+                st.session_state.edits_applied_count = result.get("edits_applied_count")
+                st.session_state.edits_suggested_count = result.get("edits_suggested_count")
+                # st.success(st.session_state.status_message) # Success message will be shown in main display area
             except requests.exceptions.HTTPError as errh:
-                st.session_state.error_message = f"Http Error: {errh.response.status_code} {errh.response.reason}"
-                try:
-                    error_detail = errh.response.json().get("detail", "No additional details.")
-                    st.session_state.error_message += f"\nDetails: {error_detail}"
-                except ValueError: # If response is not JSON
-                    st.session_state.error_message += f"\nResponse: {errh.response.text}"
-                st.error(st.session_state.error_message)
+                error_body = "Could not parse error."
+                try: error_body = errh.response.json().get("detail", errh.response.text)
+                except ValueError: error_body = errh.response.text if errh.response.text else "Http Error with no details."
+                st.session_state.error_message = f"Processing failed (Http Error): {errh.response.status_code} - {error_body}"
             except requests.exceptions.ConnectionError as errc:
-                st.session_state.error_message = f"Error Connecting: {errc}\nIs the backend server running at {BACKEND_URL}?"
-                st.error(st.session_state.error_message)
-            except requests.exceptions.Timeout as errt:
-                st.session_state.error_message = f"Timeout Error: {errt}\nThe request took too long to complete."
-                st.error(st.session_state.error_message)
-            except requests.exceptions.RequestException as err:
-                st.session_state.error_message = f"Oops, something went wrong: {err}"
-                st.error(st.session_state.error_message)
+                st.session_state.error_message = f"Processing failed (Connection Error): {errc}\nIs the backend server running at {BACKEND_URL}?"
+            except requests.exceptions.Timeout:
+                st.session_state.error_message = "Processing failed (Timeout Error): The request took too long."
             except Exception as e:
-                st.session_state.error_message = f"An unexpected error occurred: {e}"
-                st.error(st.session_state.error_message)
+                st.session_state.error_message = f"Processing failed (Unexpected Error): {str(e)}"
             finally:
                 st.session_state.processing = False
-                # Force a rerun to update UI elements based on new session state
-                st.rerun()
+                st.rerun() # Rerun to update UI
 
+with cols_main[1]: # Right column for displaying results/analysis
+    st.header("🔎 Analysis & Results")
 
-    elif not uploaded_file:
-        st.warning("Please upload a .docx file.")
-    elif not user_instructions:
-        st.warning("Please provide instructions for the changes.")
+    # Display error messages first if any
+    if st.session_state.error_message and not st.session_state.processing:
+        st.error(st.session_state.error_message)
+        # st.session_state.error_message = None # Clear after displaying once if desired
 
-# --- Display Results ---
-if st.session_state.error_message and not st.session_state.processing:
-    st.error(f"Last processing attempt failed: {st.session_state.error_message}")
+    # Display analysis content if available
+    if st.session_state.analysis_content and not st.session_state.processing:
+        st.markdown("---")
+        st.markdown("**AI Summary of Existing Tracked Changes:**")
+        st.text_area("Analysis Details:", value=st.session_state.analysis_content, height=200, disabled=True, label_visibility="collapsed")
+        st.info("This summary is based on the tracked changes found in the uploaded document using the selected analysis method.")
+        # st.session_state.analysis_content = None # Optionally clear after displaying
 
-if st.session_state.processed_file_url and st.session_state.processed_filename and not st.session_state.processing:
-    st.markdown("---")
-    st.subheader("✅ Processed Document Ready!")
-    
-    # To offer a direct download button, we need the actual file bytes.
-    # The URL points to the FastAPI server. We can fetch it and then provide a download button.
-    try:
-        # Fetch the processed file from the backend for download
-        # This adds an extra request but ensures the download is initiated from Streamlit
-        # and gives more control over the filename.
-        file_response = requests.get(st.session_state.processed_file_url, stream=True, timeout=60)
-        file_response.raise_for_status()
-        file_bytes = file_response.content
-        
-        st.download_button(
-            label=f"📥 Download {st.session_state.processed_filename}",
-            data=file_bytes,
-            file_name=st.session_state.processed_filename, # User sees this name
-            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        )
-    except Exception as e:
-        st.error(f"Could not fetch processed file for download: {e}. You can try downloading from this link: [{st.session_state.processed_filename}]({st.session_state.processed_file_url})")
-        # Provide a direct link as a fallback
-        st.markdown(f"Alternatively, try to download directly: [{st.session_state.processed_filename}]({st.session_state.processed_file_url})")
+    # Display processing status and results if available
+    if st.session_state.status_message and not st.session_state.processing:
+        st.markdown("---")
+        st.markdown("**New Changes Processing Status:**")
+        if "success" in st.session_state.status_message.lower() or \
+           (st.session_state.edits_applied_count is not None and st.session_state.edits_applied_count > 0):
+            st.success(st.session_state.status_message)
+        elif st.session_state.edits_suggested_count == 0 or \
+             (st.session_state.edits_suggested_count is not None and st.session_state.edits_applied_count == 0 and "Processing complete" in st.session_state.status_message): # Avoid info for critical fail
+            st.info(st.session_state.status_message)
+        else: 
+            st.info(st.session_state.status_message)
 
+        if st.session_state.edits_suggested_count is not None and st.session_state.edits_applied_count is not None:
+            metric_col1, metric_col2 = st.columns(2)
+            with metric_col1:
+                st.metric(label="AI Edits Suggested", value=st.session_state.edits_suggested_count)
+            with metric_col2:
+                st.metric(label="Edits Successfully Applied", value=st.session_state.edits_applied_count)
+        # st.session_state.status_message = None # Optionally clear
 
-
-if "messages" not in st.session_state:
-    st.session_state.messages = []
-
-uploaded_file = st.sidebar.file_uploader("Upload a .docx file", type=["docx"])
-author = st.sidebar.text_input("Author for tracked changes", "AI Reviewer")
-case_sensitive = st.sidebar.checkbox("Case sensitive search", True)
-add_comments = st.sidebar.checkbox("Add comments", True)
-
-# Display chat history
-for m in st.session_state.messages:
-    with st.chat_message(m["role"]):
-        st.markdown(m["content"])
-
-prompt = st.chat_input("Enter instructions and press Enter")
-if prompt:
-    if uploaded_file is None:
-        st.warning("Please upload a document before sending instructions.")
-    else:
-        st.session_state.messages.append({"role": "user", "content": prompt})
-        with st.chat_message("user"):
-            st.markdown(prompt)
-
-        files = {"file": (uploaded_file.name, uploaded_file.getvalue(), uploaded_file.type)}
-        data = {
-            "instructions": prompt,
-            "author_name": author,
-            "case_sensitive": str(case_sensitive).lower(),
-            "add_comments": str(add_comments).lower(),
-        }
+    if st.session_state.processed_file_url and st.session_state.processed_filename and not st.session_state.processing:
+        st.markdown("---")
         try:
-            resp = requests.post(f"{BACKEND_URL}/process-document/", files=files, data=data)
-            resp.raise_for_status()
-            result = resp.json()
-            download_url = result.get("download_url")
-            reply = "Document processed."
-            if download_url:
-                reply += f" [Download here]({download_url})"
-            if result.get("log_content"):
-                reply += "\n\n" + result["log_content"]
-        except Exception as e:
-            reply = f"Failed to process document: {e}"
+            # Fetch the file content for the download button
+            # This is done when results are displayed to ensure file is ready
+            file_response = requests.get(st.session_state.processed_file_url, stream=True, timeout=60)
+            file_response.raise_for_status()
+            file_bytes = file_response.content
 
-        st.session_state.messages.append({"role": "assistant", "content": reply})
-        with st.chat_message("assistant"):
-            st.markdown(reply)
+            st.download_button(
+                label=f"📥 Download {st.session_state.processed_filename}",
+                data=file_bytes,
+                file_name=st.session_state.processed_filename,
+                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            )
+        except Exception as e_download:
+            st.error(f"Could not prepare processed file for download: {e_download}. You can try the direct link if available, or reprocess.")
+            st.markdown(f"Direct link (may or may not work if file was cleaned up): [{st.session_state.processed_filename}]({st.session_state.processed_file_url})")
+        # st.session_state.processed_file_url = None # Optionally clear
 
+    if st.session_state.log_content and not st.session_state.processing:
+        st.markdown("---")
+        st.subheader("📝 New Changes Processing Log")
+        st.text_area("Log Details:", value=st.session_state.log_content, height=200, disabled=True, label_visibility="collapsed")
+        # st.session_state.log_content = None # Optionally clear
+
+# Placeholder for no action yet
+if not st.session_state.analysis_content and not st.session_state.status_message and not st.session_state.error_message and not st.session_state.processing:
+    if uploaded_file:
+        st.info("Upload a document and choose an action from the sidebar.")
+    else:
+        st.info("Upload a document using the sidebar to get started.")

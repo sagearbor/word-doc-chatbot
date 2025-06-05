@@ -11,9 +11,12 @@ This project provides a small demo showing how a Word document can be updated wi
 2. Copy `backend/.env.example` to `backend/.env` and edit it to set
    `AI_PROVIDER` and the API keys for that provider. Also copy
    `frontend/.env.example` to `frontend/.env`.
-3. Start the backend
+3. Start the backend(s)
    ```bash
-   uvicorn backend.main:app --reload
+   #uvicorn backend.main:app --reload
+   uvicorn backend.main:app --reload --port 8000
+   #uvicorn app_main.main:app --reload --port 8000
+   #uvicorn service_unzipper.unzipper_api:app --reload --port 8001
    ```
 4. In another terminal start the Streamlit app
    ```bash
@@ -55,6 +58,8 @@ Open the URL shown by Streamlit and upload a `.docx` file. Type instructions in 
     source source venv/Scripts/activate # Use On Windows use 
     # source venv/bin/activate  # Use on Unix, Mac, WSL systems
     ```
+
+
 
 3.  **Install dependencies:**
     ```bash

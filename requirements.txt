@@ -5,8 +5,6 @@ python-docx
 openai
 python-dotenv>=1.0.0
 requests
-aiofiles  # For async file operations with FastAPI
+aiofiles
 litellm>=1.0.0
-python-multipart
-
 python-multipart
