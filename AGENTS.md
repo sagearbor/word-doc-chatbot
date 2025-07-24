@@ -1,6 +1,10 @@
-# Project Plan: Word Document Chatbot Debugging & Enhancement
+# Project Plan: Fallback Document Feature Development
 
-**Overall Goal:** Resolve critical errors to enable the LLM to process multi-part instructions correctly and apply them as tracked changes in a .docx file.
+**Overall Goal:** Implement a fallback document feature that allows users to upload template/baseline Word documents containing minimum contract requirements for automated processing.
+
+**Current Status:** Phase 2.1 Complete ✅ - Advanced Requirements Processing Engine Built
+
+**Progress Tracking:** See PROJECT_PROGRESS.md for detailed development status.
 
 **Phase 1: Resolve Azure API Connection Error (Highest Priority Blocker)**
 

@@ -16,7 +16,10 @@ from docx import Document
 from .llm_handler import (
     get_llm_suggestions,
     get_llm_analysis_from_summary,   # For Approach 1
-    get_llm_analysis_from_raw_xml    # For Approach 2
+    get_llm_analysis_from_raw_xml,   # For Approach 2
+    get_llm_suggestions_with_fallback,  # Phase 2.2 Advanced Merging
+    get_merge_analysis,                 # Phase 2.2 Analysis
+    get_advanced_legal_instructions     # Phase 2.2 Instructions
 )
 from .word_processor import (
     process_document_with_edits,
@@ -25,6 +28,32 @@ from .word_processor import (
     extract_tracked_changes_as_text, # For Approach 1
     get_document_xml_raw_text        # For Approach 2
 )
+from .legal_document_processor import (
+    parse_legal_document,
+    extract_fallback_requirements,
+    generate_instructions_from_fallback,
+    LegalDocumentStructure,
+    LegalRequirement
+)
+from .requirements_processor import (
+    process_fallback_document_requirements,
+    generate_enhanced_instructions,
+    RequirementsProcessor,
+    ProcessedRequirement
+)
+
+# Import Phase 4.1 workflow orchestrator
+try:
+    from .legal_workflow_orchestrator import (
+        process_legal_document_workflow,
+        LegalDocumentWorkflowResult,
+        ProcessingStatus
+    )
+    WORKFLOW_ORCHESTRATOR_AVAILABLE = True
+    print("Phase 4.1 Legal Workflow Orchestrator imported successfully")
+except ImportError as e:
+    print(f"Warning: Legal Workflow Orchestrator not available: {e}")
+    WORKFLOW_ORCHESTRATOR_AVAILABLE = False
 
 app = FastAPI(title="Word Document Processing API")
 
@@ -274,7 +303,665 @@ def cleanup_temp_dir():
     except Exception as e:
         print(f"Error during temporary directory cleanup: {e}"); traceback.print_exc()
 
+# New endpoints for fallback document processing
+
+@app.post("/upload-fallback-document/")
+async def upload_fallback_document(
+    file: UploadFile = File(...),
+    test_case_id: str = Form("default"),
+    description: str = Form("")
+):
+    """Upload and analyze fallback document for requirement extraction"""
+    if not file.filename or not file.filename.lower().endswith(".docx"):
+        raise HTTPException(status_code=400, detail="Only .docx files are supported.")
+    
+    request_id = str(uuid.uuid4())
+    original_filename = os.path.basename(file.filename)
+    fallback_path = os.path.join(TEMP_DIR_ROOT, f"{request_id}_fallback_{original_filename}")
+    
+    print(f"[PID:{os.getpid()}] /upload-fallback-document/ received for '{original_filename}'")
+    
+    try:
+        os.makedirs(TEMP_DIR_ROOT, exist_ok=True)
+        with open(fallback_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        print(f"[PID:{os.getpid()}] Fallback document saved to '{fallback_path}'")
+        
+        # Parse legal document structure
+        document_structure = parse_legal_document(fallback_path)
+        
+        # Extract requirements
+        requirements = extract_fallback_requirements(fallback_path)
+        
+        # Generate summary
+        summary = {
+            "filename": original_filename,
+            "test_case_id": test_case_id,
+            "description": description,
+            "document_title": document_structure.title,
+            "sections_count": len(document_structure.sections),
+            "requirements_count": len(requirements),
+            "whereas_clauses_count": len(document_structure.whereas_clauses),
+            "authors": document_structure.authors,
+            "high_priority_requirements": len([r for r in requirements if r.priority <= 2]),
+            "requirement_types": {
+                req_type: len([r for r in requirements if r.requirement_type == req_type])
+                for req_type in ["must", "shall", "required", "prohibited"]
+            }
+        }
+        
+        print(f"[PID:{os.getpid()}] Fallback document analysis complete: {len(requirements)} requirements found")
+        
+        return JSONResponse(content={
+            "status": "success",
+            "summary": summary,
+            "fallback_id": request_id,
+            "requirements_preview": [
+                {"text": req.text[:100] + "..." if len(req.text) > 100 else req.text,
+                 "type": req.requirement_type,
+                 "priority": req.priority,
+                 "section": req.section}
+                for req in requirements[:10]  # First 10 requirements
+            ]
+        })
+        
+    except Exception as e:
+        print(f"[PID:{os.getpid()}] Error processing fallback document: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Error processing fallback document: {str(e)}")
+    
+    finally:
+        if os.path.exists(fallback_path):
+            try:
+                os.remove(fallback_path)
+                print(f"[PID:{os.getpid()}] Cleaned up fallback temp file: {fallback_path}")
+            except Exception as e:
+                print(f"[PID:{os.getpid()}] Error cleaning up fallback file: {e}")
+
+@app.post("/analyze-fallback-requirements/")
+async def analyze_fallback_requirements(
+    file: UploadFile = File(...),
+    context: str = Form("")
+):
+    """Analyze fallback document and extract requirements for instruction generation"""
+    if not file.filename or not file.filename.lower().endswith(".docx"):
+        raise HTTPException(status_code=400, detail="Only .docx files are supported.")
+    
+    request_id = str(uuid.uuid4())
+    original_filename = os.path.basename(file.filename)
+    fallback_path = os.path.join(TEMP_DIR_ROOT, f"{request_id}_analyze_{original_filename}")
+    
+    print(f"[PID:{os.getpid()}] /analyze-fallback-requirements/ received for '{original_filename}'")
+    
+    try:
+        os.makedirs(TEMP_DIR_ROOT, exist_ok=True)
+        with open(fallback_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        
+        # Generate enhanced instructions using requirements processor
+        try:
+            instructions = generate_enhanced_instructions(fallback_path, context)
+            print(f"[PID:{os.getpid()}] Generated enhanced instructions using requirements processor")
+        except Exception as e:
+            print(f"[PID:{os.getpid()}] Enhanced processing failed, falling back to basic: {e}")
+            instructions = generate_instructions_from_fallback(fallback_path, context)
+        
+        # Extract basic requirements (using the fixed extractor)
+        try:
+            requirements = extract_fallback_requirements(fallback_path)
+            print(f"[PID:{os.getpid()}] Extracted {len(requirements)} basic requirements from fallback document")
+            
+            # Create categorized view for API response
+            categorized_requirements = {}
+            for req in requirements:
+                key = f"{req.requirement_type}_priority_{req.priority}"
+                if key not in categorized_requirements:
+                    categorized_requirements[key] = []
+                categorized_requirements[key].append({
+                    "text": req.text,
+                    "section": req.section,
+                    "context": req.context[:200] + "..." if len(req.context) > 200 else req.context,
+                    "priority": req.priority,
+                    "requirement_type": req.requirement_type
+                })
+            
+            requirements_count = len(requirements)
+            
+            # Try enhanced processing as secondary step (optional)
+            try:
+                processed_requirements = process_fallback_document_requirements(fallback_path)
+                if processed_requirements and len(processed_requirements) > len(requirements):
+                    print(f"[PID:{os.getpid()}] Enhanced processing found {len(processed_requirements)} requirements, using enhanced results")
+                    # Only use enhanced if it found more requirements
+                    enhanced_categorized = {}
+                    for req in processed_requirements:
+                        key = f"{req.category.value}_priority_{req.priority_level.value}"
+                        if key not in enhanced_categorized:
+                            enhanced_categorized[key] = []
+                        enhanced_categorized[key].append({
+                            "text": req.reformatted_text,
+                            "section": req.original.section,
+                            "context": req.original.context[:200] + "..." if len(req.original.context) > 200 else req.original.context,
+                            "conflicts": req.conflicts,
+                            "confidence_score": req.confidence_score,
+                            "processing_notes": req.processing_notes[:2] if req.processing_notes else []
+                        })
+                    categorized_requirements = enhanced_categorized
+                    requirements_count = len(processed_requirements)
+            except Exception as e_enhanced:
+                print(f"[PID:{os.getpid()}] Enhanced processing failed, using basic results: {e_enhanced}")
+                
+        except Exception as e:
+            print(f"[PID:{os.getpid()}] Basic requirement extraction also failed: {e}")
+            requirements_count = 0
+            categorized_requirements = {}
+        
+        return JSONResponse(content={
+            "status": "success",
+            "instructions": instructions,
+            "requirements_count": requirements_count,
+            "categorized_requirements": categorized_requirements,
+            "context_used": context,
+            "filename": original_filename
+        })
+        
+    except Exception as e:
+        print(f"[PID:{os.getpid()}] Error analyzing fallback requirements: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Error analyzing fallback requirements: {str(e)}")
+    
+    finally:
+        if os.path.exists(fallback_path):
+            try:
+                os.remove(fallback_path)
+                print(f"[PID:{os.getpid()}] Cleaned up analyze temp file: {fallback_path}")
+            except Exception as e:
+                print(f"[PID:{os.getpid()}] Error cleaning up analyze file: {e}")
+
+@app.post("/process-document-with-fallback/")
+async def process_document_with_fallback(
+    input_file: UploadFile = File(...),
+    fallback_file: UploadFile = File(...),
+    user_instructions: str = Form(""),
+    author_name: Optional[str] = Form(None),
+    case_sensitive: bool = Form(True),
+    add_comments: bool = Form(True),
+    debug_mode: bool = Form(False),
+    extended_debug_mode: bool = Form(False),
+    merge_strategy: str = Form("append")  # "append", "prepend", "priority"
+):
+    """Process document using both fallback requirements and user instructions"""
+    # Validate file types
+    for file, name in [(input_file, "input"), (fallback_file, "fallback")]:
+        if not file.filename or not file.filename.lower().endswith(".docx"):
+            raise HTTPException(status_code=400, detail=f"Only .docx files are supported for {name} file.")
+    
+    request_id = str(uuid.uuid4())
+    input_filename = os.path.basename(input_file.filename)
+    fallback_filename = os.path.basename(fallback_file.filename)
+    
+    input_path = os.path.join(TEMP_DIR_ROOT, f"{request_id}_input_{input_filename}")
+    fallback_path = os.path.join(TEMP_DIR_ROOT, f"{request_id}_fallback_{fallback_filename}")
+    output_path = os.path.join(TEMP_DIR_ROOT, f"{request_id}_output_{input_filename}")
+    
+    print(f"[PID:{os.getpid()}] /process-document-with-fallback/ - Input: '{input_filename}', Fallback: '{fallback_filename}'")
+    
+    try:
+        os.makedirs(TEMP_DIR_ROOT, exist_ok=True)
+        
+        # Save both files
+        with open(input_path, "wb") as buffer:
+            shutil.copyfileobj(input_file.file, buffer)
+        with open(fallback_path, "wb") as buffer:
+            shutil.copyfileobj(fallback_file.file, buffer)
+        
+        # Extract text for LLM processing
+        doc_text_for_llm = extract_text_for_llm(input_path)
+        
+        # TEMPORARILY DISABLE Phase 2.2 - it's not working properly
+        # Force use of working Phase 2.1 Enhanced Instructions
+        force_use_phase21 = True
+        
+        # Use Phase 2.2 Advanced Instruction Merging (or force Phase 2.1)
+        try:
+            if force_use_phase21:
+                print(f"[PID:{os.getpid()}] FORCING Phase 2.1 Enhanced Instructions (Phase 2.2 disabled for debugging)...")
+                raise Exception("Phase 2.2 disabled - using Phase 2.1")
+            
+            print(f"[PID:{os.getpid()}] Attempting Phase 2.2 Advanced Instruction Merging...")
+            
+            # Convert simple merge strategy to Phase 2.2 strategy
+            phase22_strategy_map = {
+                "append": "intelligent_merge",
+                "prepend": "user_priority", 
+                "priority": "fallback_priority"
+            }
+            phase22_strategy = phase22_strategy_map.get(merge_strategy, "intelligent_merge")
+            
+            # Get LLM suggestions using Phase 2.2 advanced merging
+            edits = get_llm_suggestions_with_fallback(
+                doc_text_for_llm, 
+                user_instructions, 
+                input_filename, 
+                fallback_path
+            )
+            
+            # For debug mode, capture additional fallback processing info
+            if debug_mode or extended_debug_mode:
+                try:
+                    from .legal_document_processor import extract_fallback_requirements
+                    fallback_requirements = extract_fallback_requirements(fallback_path)
+                    debug_fallback_info = {
+                        "fallback_requirements_count": len(fallback_requirements) if fallback_requirements else 0,
+                        "requirement_types": list(set([req.requirement_type for req in fallback_requirements])) if fallback_requirements else [],
+                        "sample_requirements": [req.text[:100] + "..." if len(req.text) > 100 else req.text for req in fallback_requirements[:3]] if fallback_requirements else []
+                    }
+                except Exception as e:
+                    debug_fallback_info = {"error": f"Could not analyze fallback requirements: {str(e)}"}
+            
+            print(f"[PID:{os.getpid()}] Phase 2.2 Advanced Merging completed successfully")
+            
+        except Exception as e:
+            print(f"[PID:{os.getpid()}] Phase 2.2 Advanced Merging failed: {e}")
+            print(f"[PID:{os.getpid()}] Falling back to Phase 2.1 enhanced instructions...")
+            
+            # Fallback to Phase 2.1 method - use our FIXED function directly
+            print(f"[PID:{os.getpid()}] Using fixed generate_instructions_from_fallback function...")
+            fallback_instructions = generate_instructions_from_fallback(
+                fallback_path, 
+                context=f"Processing {input_filename} with fallback requirements"
+            )
+            print(f"[PID:{os.getpid()}] Generated {len(fallback_instructions)} characters of fallback instructions")
+            
+            # Merge instructions based on strategy
+            if merge_strategy == "append":
+                combined_instructions = f"{fallback_instructions}\n\nAdditional User Instructions:\n{user_instructions}" if user_instructions else fallback_instructions
+            elif merge_strategy == "prepend":
+                combined_instructions = f"{user_instructions}\n\nFallback Requirements:\n{fallback_instructions}" if user_instructions else fallback_instructions
+            else:  # priority - fallback takes precedence
+                combined_instructions = fallback_instructions
+                if user_instructions:
+                    combined_instructions += f"\n\nNote: Apply user instructions only if they do not conflict with above requirements:\n{user_instructions}"
+            
+            print(f"[PID:{os.getpid()}] Combined instructions length: {len(combined_instructions)} characters")
+            
+            # Get LLM suggestions using combined instructions (Phase 2.1 fallback)
+            edits = get_llm_suggestions(doc_text_for_llm, combined_instructions, input_filename)
+        
+        if edits is None:
+            raise HTTPException(status_code=500, detail="LLM failed to generate suggestions from fallback document.")
+        
+        # Process document with edits
+        processed_edits_count = 0
+        log_file_path_returned = None
+        log_details_returned = []
+        
+        if edits:
+            wp_success, log_file_path_returned, log_details_returned, processed_edits_count = process_document_with_edits(
+                input_docx_path=input_path,
+                output_docx_path=output_path,
+                edits_to_make=edits,
+                author_name=author_name if author_name else DEFAULT_AUTHOR_NAME,
+                debug_mode_flag=debug_mode,
+                extended_debug_mode_flag=extended_debug_mode,
+                case_sensitive_flag=case_sensitive,
+                add_comments_param=add_comments
+            )
+            
+            if not wp_success:
+                error_issue = "Word processing failed with fallback document."
+                if log_details_returned and isinstance(log_details_returned, list) and log_details_returned[0].get("issue"):
+                    error_issue = str(log_details_returned[0]["issue"])
+                raise HTTPException(status_code=500, detail=error_issue)
+        else:
+            shutil.copy(input_path, output_path)
+            log_details_returned = [{"issue": "No changes suggested based on fallback document requirements.", "type": "Info"}]
+            processed_edits_count = 0
+        
+        # Prepare log content
+        log_content_for_response = ""
+        if log_file_path_returned and os.path.exists(log_file_path_returned):
+            with open(log_file_path_returned, "r", encoding="utf-8") as f:
+                log_content_for_response = f.read()
+        elif log_details_returned:
+            log_content_for_response = "\n".join(
+                f"Type: {d.get('type', 'Log')}, Issue: {d.get('issue', 'N/A')}, "
+                f"Para: {d.get('paragraph_index', -1)+1 if isinstance(d.get('paragraph_index'), int) else 'N/A'}, "
+                f"Old: '{d.get('specific_old_text', '')}'"
+                for d in log_details_returned
+            )
+        
+        if not log_content_for_response:
+            log_content_for_response = "No specific processing issues recorded for fallback document processing."
+        
+        # Generate status message
+        total_suggested_edits = len(edits)
+        if total_suggested_edits == 0:
+            status_message = "Processing complete. No changes suggested based on fallback document."
+        elif processed_edits_count == total_suggested_edits:
+            status_message = f"Processing complete. All {processed_edits_count} fallback-based changes were applied."
+        else:
+            status_message = f"Processing complete. {processed_edits_count} out of {total_suggested_edits} fallback-based changes were applied."
+        
+        # Add debug information for troubleshooting
+        debug_info = {}
+        if debug_mode or extended_debug_mode:
+            # Basic debug information (always included when debug is enabled)
+            debug_info = {
+                "debug_mode_enabled": debug_mode,
+                "extended_debug_enabled": extended_debug_mode,
+                "user_instructions_length": len(user_instructions) if user_instructions else 0,
+                "raw_edits_from_llm": len(edits) if edits else 0,
+                "processing_successful": processed_edits_count > 0,
+                "edits_preview": [
+                    {
+                        "old": edit.get("specific_old_text", "")[:50],
+                        "new": edit.get("specific_new_text", "")[:50],
+                        "reason": edit.get("reason", "")[:100]
+                    } for edit in (edits[:3] if edits else [])
+                ],
+                "user_friendly_summary": {
+                    "requirements_found": "✅ Found requirements from fallback document",
+                    "llm_processing": f"🤖 LLM suggested {len(edits) if edits else 0} edits",
+                    "document_processing": f"📝 Successfully applied {processed_edits_count} out of {total_suggested_edits} edits",
+                    "potential_issues": []
+                }
+            }
+            
+            # Add potential issue diagnostics
+            if len(edits) == 0:
+                debug_info["user_friendly_summary"]["potential_issues"].append("❌ LLM generated no edit suggestions - check if fallback requirements are clear")
+            elif processed_edits_count == 0:
+                debug_info["user_friendly_summary"]["potential_issues"].append("❌ No edits were applied - text matching may have failed")
+            elif processed_edits_count < total_suggested_edits:
+                debug_info["user_friendly_summary"]["potential_issues"].append("⚠️ Some edits failed to apply - check for exact text matches")
+            
+            # Extended debug information (only when extended debugging is enabled)
+            if extended_debug_mode:
+                debug_info["extended_details"] = {
+                    "fallback_document_analysis": debug_fallback_info if 'debug_fallback_info' in locals() else "Fallback requirements extracted and processed",
+                    "instruction_merging": f"User instructions ({len(user_instructions)} chars) merged with fallback requirements",
+                    "llm_prompt_preview": "LLM was asked to modify the document based on merged requirements...",
+                    "edit_details": [
+                        {
+                            "edit_number": i + 1,
+                            "old_text": edit.get("specific_old_text", ""),
+                            "new_text": edit.get("specific_new_text", ""),
+                            "contextual_text": edit.get("contextual_old_text", "")[:200],
+                            "reason": edit.get("reason", ""),
+                            "applied_successfully": i < processed_edits_count
+                        } for i, edit in enumerate(edits[:5] if edits else [])  # Show first 5 edits
+                    ],
+                    "processing_method": "Phase 2.2 Advanced Merging" if "Phase 2.2" in log_content_for_response else "Phase 2.1 Enhanced Instructions"
+                }
+        
+        response_content = {
+            "processed_filename": os.path.basename(output_path),
+            "download_url": f"/download/{os.path.basename(output_path)}",
+            "log_content": log_content_for_response,
+            "status_message": status_message,
+            "issues_count": len(log_details_returned) if log_details_returned else 0,
+            "edits_applied_count": processed_edits_count,
+            "edits_suggested_count": total_suggested_edits,
+            "fallback_filename": fallback_filename,
+            "merge_strategy": merge_strategy,
+            "processing_method": "Phase 2.2 Advanced Merging" if "Phase 2.2" in log_content_for_response else "Phase 2.1 Enhanced Instructions"
+        }
+        
+        if debug_info:
+            response_content["debug_info"] = debug_info
+            
+        return JSONResponse(content=response_content)
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[PID:{os.getpid()}] Error in /process-document-with-fallback/: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Error processing document with fallback: {str(e)}")
+    
+    finally:
+        for path in [input_path, fallback_path]:
+            if os.path.exists(path):
+                try:
+                    os.remove(path)
+                    print(f"[PID:{os.getpid()}] Cleaned up temp file: {path}")
+                except Exception as e:
+                    print(f"[PID:{os.getpid()}] Error cleaning up {path}: {e}")
+
+@app.post("/analyze-merge/")
+async def analyze_merge_endpoint(
+    fallback_file: UploadFile = File(...),
+    user_instructions: str = Form(""),
+    merge_strategy: str = Form("intelligent_merge")  # Phase 2.2 strategies
+):
+    """Phase 2.2: Analyze advanced instruction merging without processing document"""
+    
+    if not fallback_file.filename or not fallback_file.filename.lower().endswith(".docx"):
+        raise HTTPException(status_code=400, detail="Only .docx files are supported for fallback file.")
+    
+    request_id = str(uuid.uuid4())
+    fallback_filename = os.path.basename(fallback_file.filename)
+    fallback_path = os.path.join(TEMP_DIR_ROOT, f"{request_id}_analyze_fallback_{fallback_filename}")
+    
+    print(f"[PID:{os.getpid()}] /analyze-merge/ - Fallback: '{fallback_filename}', Strategy: '{merge_strategy}'")
+    
+    try:
+        os.makedirs(TEMP_DIR_ROOT, exist_ok=True)
+        
+        # Save fallback file
+        with open(fallback_path, "wb") as buffer:
+            shutil.copyfileobj(fallback_file.file, buffer)
+        
+        # Get Phase 2.2 merge analysis
+        merge_analysis = get_merge_analysis(fallback_path, user_instructions)
+        
+        # Add additional metadata
+        merge_analysis.update({
+            "fallback_filename": fallback_filename,
+            "merge_strategy_requested": merge_strategy,
+            "user_instructions_length": len(user_instructions),
+            "user_instructions_preview": user_instructions[:200] + "..." if len(user_instructions) > 200 else user_instructions
+        })
+        
+        print(f"[PID:{os.getpid()}] Phase 2.2 merge analysis complete for '{fallback_filename}'")
+        return JSONResponse(content=merge_analysis)
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[PID:{os.getpid()}] Error in /analyze-merge/: {e}")
+        traceback.print_exc()
+        return JSONResponse(
+            content={
+                "error": f"Merge analysis failed: {str(e)}",
+                "available": False,
+                "fallback_filename": fallback_filename
+            },
+            status_code=500
+        )
+    
+    finally:
+        if os.path.exists(fallback_path):
+            try:
+                os.remove(fallback_path)
+                print(f"[PID:{os.getpid()}] Cleaned up analyze-merge temp file: {fallback_path}")
+            except Exception as e:
+                print(f"[PID:{os.getpid()}] Error cleaning up analyze-merge file: {e}")
+
+@app.post("/process-legal-document/")
+async def process_legal_document_endpoint(
+    input_file: UploadFile = File(...),
+    user_instructions: str = Form(""),
+    fallback_file: Optional[UploadFile] = File(None),
+    author_name: Optional[str] = Form(None),
+    enable_audit_logging: bool = Form(True),
+    enable_backup: bool = Form(True),
+    enable_validation: bool = Form(True)
+):
+    """
+    Phase 4.1 Legal Document Processing Workflow - End-to-end orchestrated processing
+    
+    This endpoint uses the complete workflow orchestrator that integrates:
+    - Phase 1.1: Legal Document Parser
+    - Phase 2.1: Requirements Extraction
+    - Phase 2.2: Advanced Instruction Merging
+    - Document Processing and Validation
+    
+    If no fallback document is provided, it falls back to the original simple workflow.
+    """
+    if not WORKFLOW_ORCHESTRATOR_AVAILABLE:
+        raise HTTPException(
+            status_code=503, 
+            detail="Legal Workflow Orchestrator not available. Please use /process-document-with-fallback/ endpoint."
+        )
+    
+    # Validate input file
+    if not input_file.filename or not input_file.filename.lower().endswith(".docx"):
+        raise HTTPException(status_code=400, detail="Only .docx files are supported for input file.")
+    
+    # Validate fallback file if provided
+    if fallback_file and fallback_file.filename:
+        if not fallback_file.filename.lower().endswith(".docx"):
+            raise HTTPException(status_code=400, detail="Only .docx files are supported for fallback file.")
+    
+    request_id = str(uuid.uuid4())
+    input_filename = os.path.basename(input_file.filename)
+    
+    # Save files
+    input_path = os.path.join(TEMP_DIR_ROOT, f"{request_id}_legal_input_{input_filename}")
+    fallback_path = None
+    
+    print(f"[PID:{os.getpid()}] /process-legal-document/ - Starting Phase 4.1 workflow for '{input_filename}'")
+    
+    try:
+        os.makedirs(TEMP_DIR_ROOT, exist_ok=True)
+        
+        # Save input file
+        with open(input_path, "wb") as buffer:
+            shutil.copyfileobj(input_file.file, buffer)
+        
+        # Save fallback file if provided
+        if fallback_file and fallback_file.filename:
+            fallback_filename = os.path.basename(fallback_file.filename)
+            fallback_path = os.path.join(TEMP_DIR_ROOT, f"{request_id}_legal_fallback_{fallback_filename}")
+            with open(fallback_path, "wb") as buffer:
+                shutil.copyfileobj(fallback_file.file, buffer)
+            print(f"[PID:{os.getpid()}] Using fallback document: '{fallback_filename}'")
+        else:
+            print(f"[PID:{os.getpid()}] No fallback document - using original simple workflow")
+        
+        # Process using workflow orchestrator
+        workflow_result = process_legal_document_workflow(
+            input_document_path=input_path,
+            user_instructions=user_instructions,
+            fallback_document_path=fallback_path,
+            author_name=author_name,
+            enable_audit_logging=enable_audit_logging,
+            enable_backup=enable_backup,
+            enable_validation=enable_validation
+        )
+        
+        # Check if processing was successful
+        if workflow_result.overall_status != ProcessingStatus.COMPLETED:
+            error_details = []
+            for stage in workflow_result.stage_results:
+                if stage.errors:
+                    error_details.extend(stage.errors)
+            
+            raise HTTPException(
+                status_code=500,
+                detail=f"Processing failed: {workflow_result.status_message}. Errors: {'; '.join(error_details[:3])}"
+            )
+        
+        # Prepare response
+        response_data = {
+            "workflow_id": workflow_result.workflow_id,
+            "processed_filename": workflow_result.processed_filename,
+            "download_url": f"/download/{workflow_result.processed_filename}",
+            "status_message": workflow_result.status_message,
+            "overall_status": workflow_result.overall_status.value,
+            "processing_duration_seconds": workflow_result.total_duration_seconds,
+            
+            # Metrics
+            "requirements_extracted": workflow_result.requirements_extracted,
+            "requirements_merged": workflow_result.requirements_merged,
+            "edits_suggested": workflow_result.edits_suggested,
+            "edits_applied": workflow_result.edits_applied,
+            "legal_coherence_score": workflow_result.legal_coherence_score,
+            "issues_count": workflow_result.issues_count,
+            
+            # Stage summary
+            "stages_completed": len([s for s in workflow_result.stage_results if s.status == ProcessingStatus.COMPLETED]),
+            "stages_total": len(workflow_result.stage_results),
+            
+            # Validation results
+            "validation_results": workflow_result.validation_results,
+            
+            # Processing method
+            "processing_method": "Phase 4.1 Complete Workflow" if fallback_path else "Original Simple Workflow",
+            
+            # Log content (first 5000 chars)
+            "log_content": workflow_result.log_content[:5000] if workflow_result.log_content else "No log content available"
+        }
+        
+        # Copy output file to download location if it exists
+        if workflow_result.output_document_path and os.path.exists(workflow_result.output_document_path):
+            download_path = os.path.join(TEMP_DIR_ROOT, workflow_result.processed_filename)
+            if workflow_result.output_document_path != download_path:
+                shutil.copy2(workflow_result.output_document_path, download_path)
+        
+        return JSONResponse(content=response_data)
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[PID:{os.getpid()}] Error in /process-legal-document/: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Error in legal document processing: {str(e)}")
+    
+    finally:
+        # Cleanup only the initial upload files
+        for path in [input_path, fallback_path]:
+            if path and os.path.exists(path):
+                try:
+                    os.remove(path)
+                    print(f"[PID:{os.getpid()}] Cleaned up temp file: {path}")
+                except Exception as e:
+                    print(f"[PID:{os.getpid()}] Error cleaning up {path}: {e}")
+
 @app.get("/")
 async def root():
-    # ... (keep existing root endpoint logic) ...
-    return {"message": "Word Document Processing API is running."}
+    endpoints = {
+        "message": "Word Document Processing API with Phase 4.1 Legal Workflow Orchestrator",
+        "version": "4.1.0",
+        "endpoints": {
+            "original": [
+                "POST /process-document/ - Original document processing",
+                "POST /analyze-document/ - Analyze document with tracked changes"
+            ],
+            "phase_1_2": [
+                "POST /upload-fallback-document/ - Upload and analyze fallback document",
+                "POST /analyze-fallback-requirements/ - Extract requirements from fallback",
+                "POST /process-document-with-fallback/ - Process with fallback requirements"
+            ],
+            "phase_2_2": [
+                "POST /analyze-merge/ - Analyze requirement merging strategies"
+            ],
+            "phase_4_1": [
+                "POST /process-legal-document/ - Complete legal workflow with all phases integrated"
+            ],
+            "utility": [
+                "GET /download/{filename} - Download processed document",
+                "GET / - This help message"
+            ]
+        },
+        "features": {
+            "phase_1_1": "Legal Document Parser",
+            "phase_2_1": "Requirements Extraction",
+            "phase_2_2": "Advanced Instruction Merging",
+            "phase_4_1": "Complete Workflow Orchestration"
+        },
+        "workflow_orchestrator_available": WORKFLOW_ORCHESTRATOR_AVAILABLE
+    }
+    return endpoints

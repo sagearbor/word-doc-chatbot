@@ -1,0 +1,31 @@
+{
+  "test_cases": [
+    {
+      "id": "case_001_clinical_trial_agreement",
+      "description": "Clinical trial agreement fallback document processing test case",
+      "input_document": "input_documents/starting_doc_with_tracked_changes.docx",
+      "fallback_document": "fallback_documents/clinical_trial_fallback.docx", 
+      "expected_output": "expected_outputs/desired_edited_document.docx",
+      "test_metadata": {
+        "document_type": "legal_contract",
+        "complexity": "high",
+        "tracked_changes_present": true,
+        "fallback_requirements_count": "estimated_100+",
+        "expected_changes_count": "tbd"
+      },
+      "notes": "Initial test case provided by user - clinical trial agreement with complex legal structure"
+    }
+  ],
+  "test_configuration": {
+    "comparison_method": "llm_powered_diff_analysis",
+    "scoring_criteria": [
+      "requirement_coverage",
+      "legal_accuracy", 
+      "tracked_changes_integrity",
+      "formatting_preservation"
+    ],
+    "success_threshold": 0.85,
+    "created_date": "2025-01-21",
+    "version": "1.0"
+  }
+}
