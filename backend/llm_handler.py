@@ -4,6 +4,280 @@ from typing import List, Dict, Optional, Any
 
 from .ai_client import get_chat_response # Assuming .ai_client is in the same directory or correctly pathed
 
+# Phase 2.2 Integration - Advanced Instruction Merging
+try:
+    from .instruction_merger import (
+        generate_final_llm_instructions,
+        merge_fallback_with_user_input,
+        MergeStrategy
+    )
+    PHASE_22_AVAILABLE = True
+    print("Phase 2.2 Advanced Instruction Merging integrated successfully")
+except ImportError:
+    PHASE_22_AVAILABLE = False
+    print("Phase 2.2 Advanced Instruction Merging not available")
+
+# --- Specialized Legal Document Prompts ---
+
+def get_llm_legal_requirement_analysis(requirement_text: str, context: str = "") -> Optional[str]:
+    """
+    Analyze a legal requirement using specialized prompts for legal documents
+    """
+    prompt = f"""You are a legal document analysis expert. Please analyze the following legal requirement:
+
+    Requirement: "{requirement_text}"
+    {f"Context: {context}" if context else ""}
+    
+    Please provide a structured analysis covering:
+    
+    1. **Obligation Type**: Is this a "must", "shall", "should", or "may" requirement?
+    2. **Responsible Party**: Who must comply with this requirement?
+    3. **Compliance Timing**: When must this be fulfilled (immediate, ongoing, milestone-based)?
+    4. **Legal Risk Level**: What are the consequences of non-compliance (critical, high, medium, low)?
+    5. **Implementation Complexity**: How difficult is this to implement (simple, moderate, complex)?
+    6. **Key Legal Terms**: What specific legal terminology must be preserved exactly?
+    
+    Keep the analysis concise but thorough for legal compliance purposes."""
+    
+    system_prompt = "You are a legal document analysis specialist with expertise in contract requirements, compliance obligations, and risk assessment."
+    
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": prompt}
+    ]
+    
+    try:
+        response = get_chat_response(messages, temperature=0.1, max_tokens=800)
+        return response
+    except Exception as e:
+        print(f"Error getting legal requirement analysis: {e}")
+        return "Legal analysis not available due to processing error."
+
+def get_llm_fallback_instruction_generation(requirements_list: List[str], document_type: str = "legal contract") -> Optional[str]:
+    """
+    Generate specialized instructions for applying fallback document requirements
+    """
+    requirements_text = "\n".join([f"{i+1}. {req}" for i, req in enumerate(requirements_list)])
+    
+    prompt = f"""You are a legal document processing specialist. Please convert the following fallback document requirements into precise instructions for modifying a {document_type}.
+
+    Fallback Requirements:
+    {requirements_text}
+    
+    Please generate instructions that:
+    
+    1. **Preserve Legal Structure**: Maintain hierarchical numbering (1.1, 1.2, etc.) and section organization
+    2. **Maintain Legal Language**: Keep exact legal terminology ("must", "shall", "required") without alteration
+    3. **Add Tracked Changes**: All modifications must be added as tracked changes with proper attribution
+    4. **Priority Handling**: Critical requirements (must/shall) take absolute precedence
+    5. **Compliance Focus**: Ensure regulatory and compliance requirements are implemented exactly
+    6. **Cross-Reference Preservation**: Maintain all legal cross-references and definitions
+    7. **Formatting Retention**: Preserve legal formatting (bold, underline) critical for enforceability
+    
+    Format the instructions clearly for an AI system that will apply these changes to the document.
+    
+    Begin with the highest priority requirements and include implementation guidance for complex legal obligations."""
+    
+    system_prompt = "You are an expert in legal document modification with deep understanding of contract requirements, compliance obligations, and legal formatting preservation."
+    
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": prompt}
+    ]
+    
+    try:
+        response = get_chat_response(messages, temperature=0.2, max_tokens=1200)
+        return response
+    except Exception as e:
+        print(f"Error generating fallback instructions: {e}")
+        return "Fallback instruction generation failed due to processing error."
+
+def get_llm_legal_conflict_resolution(conflicting_requirements: List[Dict], document_context: str = "") -> Optional[str]:
+    """
+    Get LLM assistance for resolving conflicts between legal requirements
+    """
+    conflicts_text = "\n".join([
+        f"Requirement {i+1}: {req.get('text', 'N/A')}\nConflict: {req.get('conflict_description', 'N/A')}\n"
+        for i, req in enumerate(conflicting_requirements)
+    ])
+    
+    prompt = f"""You are a legal document expert specializing in requirement conflict resolution. Please analyze these conflicting legal requirements and provide resolution guidance:
+
+    {f"Document Context: {document_context}" if document_context else ""}
+    
+    Conflicting Requirements:
+    {conflicts_text}
+    
+    Please provide:
+    
+    1. **Conflict Analysis**: What exactly conflicts between these requirements?
+    2. **Legal Hierarchy**: Which requirement should take precedence based on legal principles?
+    3. **Resolution Strategy**: How should these conflicts be resolved while maintaining legal validity?
+    4. **Implementation Guidance**: Specific steps to resolve the conflict in the document
+    5. **Risk Assessment**: What are the legal risks of each resolution approach?
+    
+    Prioritize compliance with regulatory requirements and legal enforceability in your recommendations."""
+    
+    system_prompt = "You are a legal expert with expertise in contract law, requirement hierarchies, and legal conflict resolution."
+    
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": prompt}
+    ]
+    
+    try:
+        response = get_chat_response(messages, temperature=0.2, max_tokens=1000)
+        return response
+    except Exception as e:
+        print(f"Error getting conflict resolution guidance: {e}")
+        return "Conflict resolution guidance not available due to processing error."
+
+# --- Phase 2.2 Advanced Instruction Merging Functions ---
+
+def get_llm_suggestions_with_fallback(document_text: str, user_instructions: str, filename: str, 
+                                    fallback_doc_path: Optional[str] = None) -> List[Dict]:
+    """
+    Enhanced version of get_llm_suggestions that uses Phase 2.2 advanced instruction merging
+    when a fallback document is provided.
+    
+    Args:
+        document_text: The target document text
+        user_instructions: User's instructions
+        filename: Name of the target document
+        fallback_doc_path: Path to fallback document (optional)
+    
+    Returns:
+        List of edit suggestions
+    """
+    
+    if not PHASE_22_AVAILABLE or not fallback_doc_path:
+        # Fall back to original method
+        print("Using original get_llm_suggestions (Phase 2.2 not available or no fallback document)")
+        return get_llm_suggestions(document_text, user_instructions, filename)
+    
+    try:
+        print("Using Phase 2.2 Advanced Instruction Merging...")
+        
+        # Generate merged instructions using Phase 2.2
+        merged_instructions = generate_final_llm_instructions(
+            fallback_doc_path, 
+            user_instructions, 
+            MergeStrategy.INTELLIGENT_MERGE
+        )
+        
+        print(f"Phase 2.2 generated {len(merged_instructions)} characters of merged instructions")
+        print("Merged instructions preview:", merged_instructions[:200] + "..." if len(merged_instructions) > 200 else merged_instructions)
+        
+        # Use the merged instructions with the original document processing
+        return get_llm_suggestions(document_text, merged_instructions, filename)
+        
+    except Exception as e:
+        print(f"Error in Phase 2.2 advanced merging: {e}")
+        print("Falling back to original get_llm_suggestions method")
+        return get_llm_suggestions(document_text, user_instructions, filename)
+
+def get_merge_analysis(fallback_doc_path: str, user_instructions: str) -> Dict[str, Any]:
+    """
+    Get detailed analysis of the Phase 2.2 merging process without applying changes.
+    
+    Args:
+        fallback_doc_path: Path to fallback document
+        user_instructions: User's instructions
+    
+    Returns:
+        Dictionary containing merge analysis details
+    """
+    
+    if not PHASE_22_AVAILABLE:
+        return {
+            "error": "Phase 2.2 Advanced Instruction Merging not available",
+            "available": False
+        }
+    
+    try:
+        print("Performing Phase 2.2 merge analysis...")
+        
+        # Get detailed merge result
+        merge_result = merge_fallback_with_user_input(
+            fallback_doc_path, 
+            user_instructions, 
+            MergeStrategy.INTELLIGENT_MERGE
+        )
+        
+        # Convert to serializable format
+        analysis = {
+            "available": True,
+            "total_merged_requirements": len(merge_result.merged_requirements),
+            "legal_coherence_score": merge_result.legal_coherence_score,
+            "unresolved_conflicts": len(merge_result.unresolved_conflicts),
+            "user_overrides": len(merge_result.user_overrides),
+            "validation_warnings": len(merge_result.validation_warnings),
+            "processing_summary": merge_result.processing_summary,
+            "high_confidence_requirements": len([r for r in merge_result.merged_requirements if r.confidence_score >= 0.8]),
+            "medium_confidence_requirements": len([r for r in merge_result.merged_requirements if 0.6 <= r.confidence_score < 0.8]),
+            "low_confidence_requirements": len([r for r in merge_result.merged_requirements if r.confidence_score < 0.6]),
+            "warnings": merge_result.validation_warnings[:5] if merge_result.validation_warnings else [],  # First 5 warnings
+            "sample_requirements": [
+                {
+                    "text": req.final_text[:100] + "..." if len(req.final_text) > 100 else req.final_text,
+                    "confidence": req.confidence_score,
+                    "source": "fallback+user" if req.source_fallback and req.source_user else 
+                             ("fallback" if req.source_fallback else "user"),
+                    "strategy": req.merge_strategy.value
+                }
+                for req in merge_result.merged_requirements[:3]  # First 3 requirements as samples
+            ]
+        }
+        
+        print(f"Phase 2.2 merge analysis complete: {analysis['total_merged_requirements']} requirements, coherence {analysis['legal_coherence_score']:.2f}")
+        return analysis
+        
+    except Exception as e:
+        print(f"Error in Phase 2.2 merge analysis: {e}")
+        return {
+            "error": f"Phase 2.2 merge analysis failed: {str(e)}",
+            "available": False
+        }
+
+def get_advanced_legal_instructions(fallback_doc_path: str, user_instructions: str, 
+                                  merge_strategy: str = "intelligent_merge") -> str:
+    """
+    Generate advanced legal instructions using Phase 2.2 merging with specified strategy.
+    
+    Args:
+        fallback_doc_path: Path to fallback document
+        user_instructions: User's instructions  
+        merge_strategy: Merge strategy to use ("intelligent_merge", "user_priority", "fallback_priority", "legal_hierarchy")
+    
+    Returns:
+        Merged instructions string ready for LLM processing
+    """
+    
+    if not PHASE_22_AVAILABLE:
+        return f"Phase 2.2 Advanced Instruction Merging not available. User instructions: {user_instructions}"
+    
+    try:
+        # Convert string strategy to enum
+        strategy_map = {
+            "intelligent_merge": MergeStrategy.INTELLIGENT_MERGE,
+            "user_priority": MergeStrategy.USER_PRIORITY,
+            "fallback_priority": MergeStrategy.FALLBACK_PRIORITY,
+            "legal_hierarchy": MergeStrategy.LEGAL_HIERARCHY
+        }
+        
+        strategy = strategy_map.get(merge_strategy, MergeStrategy.INTELLIGENT_MERGE)
+        
+        print(f"Generating advanced legal instructions with strategy: {merge_strategy}")
+        
+        merged_instructions = generate_final_llm_instructions(fallback_doc_path, user_instructions, strategy)
+        
+        print(f"Generated {len(merged_instructions)} characters of advanced legal instructions")
+        return merged_instructions
+        
+    except Exception as e:
+        print(f"Error generating advanced legal instructions: {e}")
+        return f"Error in Phase 2.2 processing: {str(e)}. Fallback user instructions: {user_instructions}"
+
 # --- Function for Approach 1: Summarizing a pre-parsed list of changes ---
 def get_llm_analysis_from_summary(changes_summary_text: str, filename: str) -> Optional[str]:
     """
@@ -104,9 +378,27 @@ def get_llm_suggestions(document_text: str, user_instructions: str, filename: st
     print(doc_snippet[:1000] + "..." if len(doc_snippet) > 1000 else doc_snippet)
     print(f"(Total snippet length: {len(doc_snippet)})")
     print("[LLM_HANDLER_DEBUG] End of document snippet for suggestions.\n")
+    
+    print("\n[LLM_HANDLER_DEBUG] User instructions being sent to LLM:")
+    print("=" * 50)
+    print(user_instructions[:800] + "..." if len(user_instructions) > 800 else user_instructions)
+    print("=" * 50)
+    print(f"(Total instructions length: {len(user_instructions)})")
+    
+    # Quick check for our key phrases
+    if "You MUST generate" in user_instructions:
+        print("✅ FOUND: Simplified direct instructions detected")
+    elif "CRITICAL: You must make MULTIPLE" in user_instructions:
+        print("✅ FOUND: Alternative simplified instructions detected")
+    elif "requirements found" in user_instructions.lower():
+        print("❌ ERROR: Getting error message instead of requirements")
+    else:
+        print("❓ UNKNOWN: Instruction format not recognized")
+    
+    print("[LLM_HANDLER_DEBUG] End of user instructions.\n")
     prompt = f"""You are an AI assistant that suggests specific textual changes for a Word document based on user instructions.
 Your goal is to identify the exact text to be replaced (`specific_old_text`), provide enough surrounding text for unique identification in the document (`contextual_old_text`), the new text (`specific_new_text`), and a reason for the change.
-**IMPORTANT: The user's instructions may request multiple, independent changes. You MUST identify and list ALL such changes. Process the ENTIRE set of user instructions and generate a separate JSON object for EACH distinct edit identified.**
+**CRITICAL: The user's instructions contain MULTIPLE separate requirements. You are REQUIRED to generate MULTIPLE separate edits - one for each requirement. Do NOT combine requirements into a single edit. Do NOT generate only one edit when multiple are requested. You MUST provide separate JSON objects for EACH requirement listed.**
 User instructions for changes: {user_instructions}
 **Critical Instructions for Defining `specific_old_text`:**
 1.  **Target Complete Semantic Units:**
@@ -140,10 +432,17 @@ Document (`{filename}`), snippet if long:
     messages = [{"role": "user", "content": prompt}]
     content: Optional[str] = None
     try:
-        content = get_chat_response(messages, temperature=0.1, response_format={"type": "json_object"})
+        content = get_chat_response(messages, temperature=0.3, response_format={"type": "json_object"})
         if not content:
             print("LLM returned empty content for suggestions.")
             return [] 
+        
+        print("\n[LLM_HANDLER_DEBUG] RAW LLM RESPONSE:")
+        print("=" * 60)
+        print(content[:2000] + "..." if len(content) > 2000 else content)
+        print("=" * 60)
+        print("[LLM_HANDLER_DEBUG] End of raw LLM response.\n")
+        
     except Exception as e:
         print(f"LLM call for suggestions failed: {e}")
         return [] 

@@ -15,7 +15,7 @@ from typing import List, Dict, Tuple, Optional, Any
 DEBUG_MODE = False
 EXTENDED_DEBUG_MODE = False
 CASE_SENSITIVE_SEARCH = True
-ADD_COMMENTS_TO_CHANGES = True
+ADD_COMMENTS_TO_CHANGES = False
 DEFAULT_AUTHOR_NAME = "LLM Editor"
 
 # --- Constants ---
@@ -192,18 +192,26 @@ def get_document_xml_raw_text(docx_path: str) -> str:
 # --- END NEW/MODIFIED FUNCTIONS FOR ANALYSIS ---
 
 
-def _add_comment_to_paragraph(paragraph, current_para_idx: int, comment_text: str, author_name: str,
+def _add_comment_to_paragraph(doc, paragraph, current_para_idx: int, comment_text: str, author_name: str,
                              ambiguous_or_failed_changes_log: List[Dict],
                              edit_item_details_for_log: Optional[Dict] = None):
     # ... (keep existing _add_comment_to_paragraph) ...
-    if not ADD_COMMENTS_TO_CHANGES or not comment_text: return
+    if not ADD_COMMENTS_TO_CHANGES or not comment_text: 
+        log_debug(f"P{current_para_idx+1}: Skipping comment addition - ADD_COMMENTS_TO_CHANGES={ADD_COMMENTS_TO_CHANGES}, comment_text_exists={bool(comment_text)}")
+        return
     log_ctx = {"paragraph_index": current_para_idx, **(edit_item_details_for_log or {})}
     try:
         author_display = f"{author_name} (LLM)"
         name_parts = [w for w in author_display.replace("(", "").replace(")", "").split() if w]
         initials = (name_parts[0][0] + name_parts[1][0]).upper() if len(name_parts) >= 2 else (name_parts[0][:2].upper() if name_parts else "AI")
-        paragraph.add_comment(text=comment_text, author=author_display, initials=initials) 
-        log_debug(f"P{current_para_idx+1}: Added comment: '{comment_text[:30]}...'.")
+        # Fix: Use document.add_comment() with paragraph.runs instead of paragraph.add_comment()
+        log_debug(f"P{current_para_idx+1}: Debug - doc type: {type(doc)}, has add_comment: {hasattr(doc, 'add_comment')}")
+        if paragraph.runs:  # Only add comment if paragraph has runs
+            log_debug(f"P{current_para_idx+1}: Attempting to add comment with {len(paragraph.runs)} runs...")
+            doc.add_comment(paragraph.runs, text=comment_text, author=author_display, initials=initials)
+            log_debug(f"P{current_para_idx+1}: Successfully added comment: '{comment_text[:30]}...'.")
+        else:
+            log_debug(f"P{current_para_idx+1}: Cannot add comment - paragraph has no runs.")
     except AttributeError as e_attr:
         log_message = f"Comment addition failed for P{current_para_idx+1} (AttributeError): {e_attr}. Object type: {type(paragraph)}. Comment: '{comment_text[:50]}...'"
         log_debug(f"CRITICAL_WARNING - {log_message}")
@@ -276,17 +284,17 @@ def _apply_markup_to_span(
     for i, new_el in enumerate(new_xml_sequence):
         paragraph_obj._p.insert(insertion_point_markup + i, new_el)
     log_debug(f"P{current_para_idx+1}: Markup applied for '{text_to_markup}'.")
-    _add_comment_to_paragraph(paragraph_obj, current_para_idx, comment_text, author_name, ambiguous_or_failed_changes_log, edit_item_details)
+    _add_comment_to_paragraph(doc, paragraph_obj, current_para_idx, comment_text, author_name, ambiguous_or_failed_changes_log, edit_item_details)
     return True
 
 
 def replace_text_in_paragraph_with_tracked_change(
-        current_para_idx: int, paragraph,
+        doc, current_para_idx: int, paragraph,
         contextual_old_text_llm, specific_old_text_llm, specific_new_text,
         reason_for_change, author, case_sensitive_flag,
         ambiguous_or_failed_changes_log) -> Tuple[str, Optional[List[Dict[str, Any]]]]:
     # ... (keep existing replace_text_in_paragraph_with_tracked_change) ...
-    print(f"[WP_DEBUG] P{current_para_idx+1} replace_text_in_paragraph_with_tracked_change called. DEBUG_MODE: {DEBUG_MODE}")
+    # Debug output disabled
     if DEBUG_MODE:
       print(f"Attempting in P{current_para_idx+1}: Context='{contextual_old_text_llm[:50]}...', SpecificOld='{specific_old_text_llm}', New='{specific_new_text}'")
     if EXTENDED_DEBUG_MODE:
@@ -295,7 +303,7 @@ def replace_text_in_paragraph_with_tracked_change(
     log_debug(f"P{current_para_idx+1}: Attempting change '{specific_old_text_llm}' to '{specific_new_text}' within LLM context '{contextual_old_text_llm[:30]}...'")
     visible_paragraph_text_original_case, elements_map = _build_visible_text_map(paragraph)
     if DEBUG_MODE or EXTENDED_DEBUG_MODE:
-        print(f"[WP_DEBUG] P{current_para_idx+1} _build_visible_text_map output: '{visible_paragraph_text_original_case}'")
+        pass  # Debug output disabled
     edit_details_for_log = {
         "contextual_old_text": contextual_old_text_llm,
         "specific_old_text": specific_old_text_llm,
@@ -444,7 +452,7 @@ def replace_text_in_paragraph_with_tracked_change(
     comment_to_add = reason_for_change
     if not specific_new_text:
         comment_to_add = f"Deleted: '{actual_specific_old_text_to_delete}'. Reason: {reason_for_change}"
-    _add_comment_to_paragraph(paragraph, current_para_idx, comment_to_add, author, ambiguous_or_failed_changes_log, edit_details_for_log)
+    _add_comment_to_paragraph(doc, paragraph, current_para_idx, comment_to_add, author, ambiguous_or_failed_changes_log, edit_details_for_log)
     return "SUCCESS", None
 
 
@@ -457,26 +465,15 @@ def process_document_with_edits(
     add_comments_param: bool = True
 ) -> Tuple[bool, Optional[str], List[Dict], int]:
     # ... (keep existing process_document_with_edits, ensuring it uses the global DEBUG_MODE flags correctly) ...
-    print("\n--- VERIFYING TEXT EXTRACTION (in process_document_with_edits) ---")
-    try:
-        temp_doc_for_verify = Document(input_docx_path)
-        for i, p_obj in enumerate(temp_doc_for_verify.paragraphs):
-            print(f"PARAGRAPH {i+1} (python-docx p.text): '{p_obj.text}'")
-            map_text, _ = _build_visible_text_map(p_obj)
-            print(f"PARAGRAPH {i+1} (_build_visible_text_map): '{map_text}'")
-            if p_obj.text != map_text:
-                print(f"    !!!! MISMATCH FOUND for P{i+1} !!!!")
-            print("---")
-    except Exception as e_verify:
-        print(f"ERROR during text extraction verification: {e_verify}")
-    print("--- END VERIFYING TEXT EXTRACTION ---\n")
+    # Text extraction verification disabled
+    # Text extraction verification disabled
     error_log_file_path: Optional[str] = None
     global DEBUG_MODE, EXTENDED_DEBUG_MODE, CASE_SENSITIVE_SEARCH, ADD_COMMENTS_TO_CHANGES
-    DEBUG_MODE = debug_mode_flag
-    EXTENDED_DEBUG_MODE = extended_debug_mode_flag
+    DEBUG_MODE = False  # Force debug off
+    EXTENDED_DEBUG_MODE = False  # Force extended debug off
     CASE_SENSITIVE_SEARCH = case_sensitive_flag
-    ADD_COMMENTS_TO_CHANGES = add_comments_param
-    print(f"[WP_DEBUG] process_document_with_edits called. Global DEBUG_MODE: {DEBUG_MODE}, ExtDEBUG_MODE: {EXTENDED_DEBUG_MODE}, AddComments: {ADD_COMMENTS_TO_CHANGES}, CaseSensitive: {CASE_SENSITIVE_SEARCH}")
+    ADD_COMMENTS_TO_CHANGES = False  # Force comments off
+    # Debug output disabled
     log_debug(f"Script starting. Input: {input_docx_path}, Output: {output_docx_path}")
     log_debug(f"Settings - Debug:{DEBUG_MODE}, ExtDebug:{EXTENDED_DEBUG_MODE}, CaseSensitive:{CASE_SENSITIVE_SEARCH}, AddComments:{ADD_COMMENTS_TO_CHANGES}, Author:{author_name}")
     log_debug(f"Number of edits to attempt: {len(edits_to_make)}")
@@ -514,7 +511,7 @@ def process_document_with_edits(
             }
             try:
                 status, data_from_replace = replace_text_in_paragraph_with_tracked_change(
-                    para_idx, paragraph_obj,
+                    doc, para_idx, paragraph_obj,
                     edit_item["contextual_old_text"], edit_item["specific_old_text"],
                     edit_item.get("specific_new_text",""),
                     edit_item["reason_for_change"],
@@ -691,7 +688,7 @@ if __name__ == '__main__':
         except Exception as e: print(f"FATAL: An unexpected error occurred while loading '{args.editsfile}': {e}. Exiting."); exit(1)
     else:
         if not DEBUG_MODE: DEBUG_MODE = True
-        print(f"[WP_DEBUG] __main__ args.debug: {args.debug}, global DEBUG_MODE set to: {DEBUG_MODE}")
+        # Debug output disabled
         log_debug("No edits provided via CLI. Using internal dummy edits for testing.")
         edits_data = [
             {"contextual_old_text": "cost would be $101 , to a new number", "specific_old_text": "$101", "specific_new_text": "$999", "reason_for_change": "Dummy change: Update cost from $101 to $999"},
