@@ -47,7 +47,7 @@ def get_llm_legal_requirement_analysis(requirement_text: str, context: str = "")
     ]
     
     try:
-        response = get_chat_response(messages, temperature=0.1, max_tokens=800)
+        response = get_chat_response(messages, temperature=0.0, max_tokens=800)
         return response
     except Exception as e:
         print(f"Error getting legal requirement analysis: {e}")
@@ -86,7 +86,7 @@ def get_llm_fallback_instruction_generation(requirements_list: List[str], docume
     ]
     
     try:
-        response = get_chat_response(messages, temperature=0.2, max_tokens=1200)
+        response = get_chat_response(messages, temperature=0.0, max_tokens=1200)
         return response
     except Exception as e:
         print(f"Error generating fallback instructions: {e}")
@@ -126,7 +126,7 @@ def get_llm_legal_conflict_resolution(conflicting_requirements: List[Dict], docu
     ]
     
     try:
-        response = get_chat_response(messages, temperature=0.2, max_tokens=1000)
+        response = get_chat_response(messages, temperature=0.0, max_tokens=1000)
         return response
     except Exception as e:
         print(f"Error getting conflict resolution guidance: {e}")
@@ -309,7 +309,7 @@ def get_llm_analysis_from_summary(changes_summary_text: str, filename: str) -> O
         {"role": "user", "content": prompt},
     ]
     try:
-        response = get_chat_response(messages, temperature=0.2, max_tokens=800) # Max output tokens
+        response = get_chat_response(messages, temperature=0.0, max_tokens=800) # Max output tokens
         return response
     except Exception as e:
         print(f"An error occurred while calling AI provider for analysis of changes summary: {e}")
@@ -361,7 +361,7 @@ def get_llm_analysis_from_raw_xml(document_xml_content: str, filename: str) -> O
     ]
     try:
         # For raw XML, the LLM might need a larger context window and more output tokens if it tries to quote things.
-        response = get_chat_response(messages, temperature=0.2, max_tokens=1000) # Max output tokens
+        response = get_chat_response(messages, temperature=0.0, max_tokens=1000) # Max output tokens
         return response
     except Exception as e:
         print(f"An error occurred while calling AI provider for raw XML analysis: {e}")
@@ -369,7 +369,181 @@ def get_llm_analysis_from_raw_xml(document_xml_content: str, filename: str) -> O
 
 
 def get_llm_suggestions(document_text: str, user_instructions: str, filename: str) -> List[Dict]:
-    # ... (keep existing get_llm_suggestions as it's for a different functionality) ...
+    """
+    Generate LLM suggestions for document edits.
+    
+    This function now respects the global LLM configuration settings:
+    - If LLM mode is enabled, uses intelligent document analysis
+    - If regex mode is enabled, uses the original approach
+    """
+    
+    # Check if we should use intelligent LLM-based processing
+    try:
+        from .legal_document_processor import USE_LLM_INSTRUCTIONS
+        if USE_LLM_INSTRUCTIONS:
+            print("🧠 Using intelligent LLM-based instruction processing for manual input")
+            return _get_intelligent_llm_suggestions(document_text, user_instructions, filename)
+        else:
+            print("📝 Using original pattern-based processing for manual input")
+            return _get_original_llm_suggestions(document_text, user_instructions, filename)
+    except ImportError:
+        print("⚠️ Could not import LLM configuration, using original approach")
+        return _get_original_llm_suggestions(document_text, user_instructions, filename)
+
+def _get_intelligent_llm_suggestions(document_text: str, user_instructions: str, filename: str) -> List[Dict]:
+    """
+    Intelligent LLM-based approach that understands document context and user intent
+    """
+    
+    # Truncate document if needed
+    max_doc_snippet_len = 7500
+    doc_snippet = document_text
+    if len(document_text) > max_doc_snippet_len:
+        doc_snippet = document_text[:max_doc_snippet_len] + "\n... [DOCUMENT TRUNCATED] ..."
+    
+    print(f"🧠 Intelligent LLM processing for document '{filename}' ({len(doc_snippet)} chars)")
+    print(f"📝 User instructions ({len(user_instructions)} chars): {user_instructions[:200]}{'...' if len(user_instructions) > 200 else ''}")
+    print(f"📝 Full user instructions: {user_instructions}")  # Debug: see full instructions
+    
+    # Enhanced prompt with clear document distinction
+    prompt = f"""You are an intelligent document editor. You have analysis instructions derived from a fallback document that specify what changes should be made to the main document.
+
+MAIN DOCUMENT TO EDIT (the document you must find and modify text in):
+Document: "{filename}"
+Content: {doc_snippet}
+
+ANALYSIS INSTRUCTIONS (derived from fallback document requirements):
+{user_instructions}
+
+CRITICAL UNDERSTANDING:
+- The ANALYSIS INSTRUCTIONS came from a fallback document (different from main document)
+- You must find text that ACTUALLY EXISTS in the MAIN DOCUMENT above
+- DO NOT look for text from the fallback document in the main document
+- Only suggest changes for text you can actually see in the main document content
+
+YOUR APPROACH:
+1. **Read each analysis instruction carefully**
+2. **Look ONLY in the main document content** for relevant text to modify
+3. **For missing requirements**: Look for the closest related text in the main document to enhance
+4. **For existing text**: Find exact matches in the main document to improve
+
+EXAMPLES OF CORRECT ANALYSIS:
+
+❌ WRONG: Looking for fallback document text in main document
+Instruction: "Ensure phrase 'ICF and HIPAA Authorization grants Sponsor rights' is present"
+Wrong approach: Look for exact fallback text in main document (won't exist)
+
+✅ CORRECT: Find related main document text to enhance
+Instruction: "Ensure phrase 'ICF and HIPAA Authorization grants Sponsor rights' is present"  
+Correct approach: Look for related ICF/consent language in main document and enhance it
+
+❌ WRONG: Vague text matching
+Old Text: "the obligations will continue"
+
+✅ CORRECT: Exact text from main document
+Old Text: "The obligations set forth in this Section 5.1"
+
+CRITICAL REQUIREMENTS FOR REPRODUCIBILITY:
+1. **EXACT TEXT MATCHING**: Your "specific_old_text" MUST be copied word-for-word from the main document above
+2. **NO PARAPHRASING**: Do not rephrase or summarize text - copy it exactly as written
+3. **SUFFICIENT LENGTH**: Use text snippets of at least 10-15 words to ensure uniqueness
+4. **AVOID VAGUE PHRASES**: Never use short, generic phrases like "the obligations will continue"
+5. **COPY-PASTE VERIFICATION**: Mentally copy-paste your "specific_old_text" from the main document
+
+VALIDATION REQUIREMENTS:
+- "specific_old_text" must be EXACT text that exists in the main document content above
+- Use Ctrl+F mentality: your text should be findable with exact search
+- Include enough context to make the match unique (full sentences preferred)
+- If you cannot find a substantial, unique text snippet, skip that instruction
+
+PRECISION GUIDELINES:
+- ✅ GOOD: "Study Site agrees to conduct this Study in strict accordance with the Protocol"
+- ❌ BAD: "the obligations will continue" (too vague)
+- ✅ GOOD: "Payment Administrator will administer such funds and shall make all payments to Study Site"
+- ❌ BAD: "payment terms" (too generic)
+
+OUTPUT FORMAT:
+Return a JSON array of edit objects:
+- "contextual_old_text": 50+ character surrounding text from main document
+- "specific_old_text": EXACT text from main document (minimum 10 words when possible)
+- "specific_new_text": Improved text based on analysis instructions  
+- "reason_for_change": Why this change fulfills the analysis instruction
+
+CONSISTENCY ENFORCEMENT:
+- Generate the SAME suggestions each time for the same document
+- Use deterministic text selection (choose the longest, most specific match)
+- Prioritize full sentences over partial phrases
+
+Example: [{{"contextual_old_text": "longer surrounding text from main doc for context", "specific_old_text": "exact complete sentence or substantial phrase from main doc", "specific_new_text": "improved text", "reason_for_change": "fulfills instruction X"}}]
+
+If no exact substantial text matches can be found, return: []
+"""
+
+    messages = [{"role": "user", "content": prompt}]
+    
+    try:
+        content = get_chat_response(messages, temperature=0.0, seed=42, response_format={"type": "json_object"})
+        if not content:
+            print("❌ LLM returned empty content for intelligent suggestions")
+            return []
+        
+        print("✅ Intelligent LLM response received")
+        print(f"📊 Response length: {len(content)} characters")
+        
+        # Parse the response
+        edits = _parse_llm_response(content)
+        print(f"🎯 Generated {len(edits)} intelligent suggestions")
+        
+        # Enhanced debugging: Show all suggestions before validation
+        print("\n" + "="*80)
+        print("📋 DETAILED LLM SUGGESTIONS ANALYSIS")
+        print("="*80)
+        for i, edit in enumerate(edits, 1):
+            print(f"\n📝 SUGGESTION {i}:")
+            print(f"   Context: {edit.get('contextual_old_text', 'N/A')[:100]}...")
+            print(f"   Old Text: '{edit.get('specific_old_text', 'N/A')}'")
+            print(f"   New Text: '{edit.get('specific_new_text', 'N/A')[:100]}{'...' if len(str(edit.get('specific_new_text', ''))) > 100 else ''}'")
+            print(f"   Reason: {edit.get('reason_for_change', 'N/A')}")
+        print("="*80)
+        
+        validated_edits = _validate_edits(edits)
+        
+        if len(validated_edits) != len(edits):
+            print(f"⚠️  VALIDATION: {len(edits)} suggestions → {len(validated_edits)} valid (dropped {len(edits) - len(validated_edits)})")
+        
+        return validated_edits
+        
+    except Exception as e:
+        print(f"❌ Error in intelligent LLM processing: {e}")
+        print("🔄 Falling back to original approach...")
+        return _get_original_llm_suggestions(document_text, user_instructions, filename)
+
+def _validate_edits(edits: List[Dict]) -> List[Dict]:
+    """
+    Validate edit suggestions to ensure they have required fields and proper types
+    """
+    valid_edits = []
+    required_keys = {"contextual_old_text", "specific_old_text", "reason_for_change"}
+    
+    print("\n🔍 VALIDATION RESULTS:")
+    for i, edit_item in enumerate(edits, 1):
+        if isinstance(edit_item, dict) and required_keys.issubset(edit_item.keys()):
+            if all(isinstance(edit_item.get(key), str) for key in ["contextual_old_text", "specific_old_text", "reason_for_change"]) and \
+               (edit_item.get("specific_new_text") is None or isinstance(edit_item.get("specific_new_text"), str)):
+                valid_edits.append(edit_item)
+                print(f"   ✅ Edit {i}: VALID - '{edit_item.get('specific_old_text', 'N/A')[:50]}{'...' if len(str(edit_item.get('specific_old_text', ''))) > 50 else ''}'")
+            else:
+                print(f"   ❌ Edit {i}: INVALID DATA TYPES - {edit_item.get('specific_old_text', 'N/A')[:50]}")
+        else:
+            print(f"   ❌ Edit {i}: MISSING KEYS - Required: {required_keys}")
+    
+    print(f"📊 VALIDATION SUMMARY: {len(valid_edits)}/{len(edits)} edits passed validation\n")
+    return valid_edits
+
+def _get_original_llm_suggestions(document_text: str, user_instructions: str, filename: str) -> List[Dict]:
+    """
+    Original approach - detailed prompting with strict pattern matching
+    """
     max_doc_snippet_len = 7500 
     doc_snippet = document_text
     if len(document_text) > max_doc_snippet_len:
@@ -432,7 +606,7 @@ Document (`{filename}`), snippet if long:
     messages = [{"role": "user", "content": prompt}]
     content: Optional[str] = None
     try:
-        content = get_chat_response(messages, temperature=0.3, response_format={"type": "json_object"})
+        content = get_chat_response(messages, temperature=0.0, response_format={"type": "json_object"})
         if not content:
             print("LLM returned empty content for suggestions.")
             return [] 
@@ -453,18 +627,8 @@ Document (`{filename}`), snippet if long:
         print(f"Critical error during _parse_llm_response after LLM call: {e_parse}")
         print(f"Content given to _parse_llm_response (snippet): {content[:500] if content else 'None'}")
         return []
-    valid_edits: List[Dict] = []
-    required_keys = {"contextual_old_text", "specific_old_text", "reason_for_change"}
-    for i, edit_item in enumerate(edits): 
-        if isinstance(edit_item, dict) and required_keys.issubset(edit_item.keys()):
-            if all(isinstance(edit_item.get(key), str) for key in ["contextual_old_text", "specific_old_text", "reason_for_change"]) and \
-               (edit_item.get("specific_new_text") is None or isinstance(edit_item.get("specific_new_text"), str)):
-                valid_edits.append(edit_item)
-            else:
-                print(f"Skipping edit item {i+1} due to incorrect data types for required keys: {edit_item}.")
-        else:
-            print(f"Skipping edit item {i+1} due to missing keys or not being a dictionary: {edit_item}. Required: {required_keys}")
-    return valid_edits
+    
+    return _validate_edits(edits)
 
 def _parse_llm_response(content: str) -> List[Dict]:
     # ... (keep existing _parse_llm_response) ...

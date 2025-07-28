@@ -930,6 +930,51 @@ async def process_legal_document_endpoint(
                 except Exception as e:
                     print(f"[PID:{os.getpid()}] Error cleaning up {path}: {e}")
 
+@app.get("/llm-config/")
+async def get_llm_config():
+    """Get current LLM configuration status"""
+    from .legal_document_processor import USE_LLM_EXTRACTION, USE_LLM_INSTRUCTIONS, get_current_mode
+    
+    return JSONResponse(content={
+        "current_mode": get_current_mode(),
+        "extraction_method": "LLM" if USE_LLM_EXTRACTION else "Regex",
+        "instruction_method": "LLM" if USE_LLM_INSTRUCTIONS else "Hardcoded",
+        "llm_extraction_enabled": USE_LLM_EXTRACTION,
+        "llm_instructions_enabled": USE_LLM_INSTRUCTIONS,
+        "description": "LLM mode uses AI to understand documents intelligently, while regex/hardcoded uses pattern matching"
+    })
+
+@app.post("/llm-config/")
+async def set_llm_config(
+    extraction_method: str = Form("regex"),  # "llm" or "regex"
+    instruction_method: str = Form("hardcoded")  # "llm" or "hardcoded"
+):
+    """Configure LLM vs regex/hardcoded approaches"""
+    from .legal_document_processor import (
+        enable_llm_extraction, disable_llm_extraction,
+        enable_llm_instructions, disable_llm_instructions,
+        get_current_mode
+    )
+    
+    # Configure extraction method
+    if extraction_method.lower() == "llm":
+        enable_llm_extraction()
+    else:
+        disable_llm_extraction()
+    
+    # Configure instruction method
+    if instruction_method.lower() == "llm":
+        enable_llm_instructions()
+    else:
+        disable_llm_instructions()
+    
+    return JSONResponse(content={
+        "status": "Configuration updated",
+        "new_mode": get_current_mode(),
+        "extraction_method": extraction_method,
+        "instruction_method": instruction_method
+    })
+
 @app.get("/")
 async def root():
     endpoints = {
@@ -950,6 +995,10 @@ async def root():
             ],
             "phase_4_1": [
                 "POST /process-legal-document/ - Complete legal workflow with all phases integrated"
+            ],
+            "configuration": [
+                "GET /llm-config/ - Get current LLM configuration",
+                "POST /llm-config/ - Configure LLM vs regex approaches"
             ],
             "utility": [
                 "GET /download/{filename} - Download processed document",

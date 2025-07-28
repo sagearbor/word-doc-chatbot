@@ -181,6 +181,69 @@ with st.sidebar:
         )
         merge_strategy_payload = merge_strategy_options[merge_strategy]
     
+    st.markdown("---")
+    st.subheader("🤖 AI Processing Mode")
+    
+    # Fetch current LLM configuration
+    llm_config = None
+    try:
+        config_response = requests.get(f"{BACKEND_URL}/llm-config/", timeout=5)
+        if config_response.status_code == 200:
+            llm_config = config_response.json()
+    except:
+        pass  # Silently handle errors - this is not critical
+    
+    if llm_config:
+        current_mode = llm_config.get("current_mode", "Unknown")
+        st.info(f"**Current Mode**: {current_mode}")
+        
+        # Extraction method selection
+        extraction_options = {
+            "🧠 LLM-Based (Recommended)": "llm",
+            "📝 Regex-Based (Legacy)": "regex"
+        }
+        current_extraction = "llm" if llm_config.get("llm_extraction_enabled", False) else "regex"
+        extraction_choice = st.selectbox(
+            "📋 Requirement Extraction (Step 1):",
+            options=list(extraction_options.keys()),
+            index=0 if current_extraction == "llm" else 1,
+            help="How to find requirements in fallback documents:\n• LLM: AI reads and understands document context intelligently\n• Regex: Uses hardcoded text patterns (limited to specific phrases)"
+        )
+        
+        # Instruction method selection
+        instruction_options = {
+            "🧠 LLM-Based (Recommended)": "llm", 
+            "📝 Hardcoded (Legacy)": "hardcoded"
+        }
+        current_instructions = "llm" if llm_config.get("llm_instructions_enabled", False) else "hardcoded"
+        instruction_choice = st.selectbox(
+            "✏️ Instruction Generation (Step 2):",
+            options=list(instruction_options.keys()),
+            index=0 if current_instructions == "llm" else 1,
+            help="How to create 'Change X to Y' instructions:\n• LLM: AI creates smart instructions understanding context\n• Hardcoded: Uses fixed text replacement patterns (limited flexibility)"
+        )
+        
+        # Update configuration button
+        if st.button("🔄 Update AI Mode", help="Apply the selected AI processing configuration"):
+            try:
+                config_data = {
+                    "extraction_method": extraction_options[extraction_choice],
+                    "instruction_method": instruction_options[instruction_choice]
+                }
+                
+                config_response = requests.post(f"{BACKEND_URL}/llm-config/", data=config_data, timeout=10)
+                if config_response.status_code == 200:
+                    result = config_response.json()
+                    st.success(f"✅ Configuration updated! New mode: {result.get('new_mode', 'Unknown')}")
+                    st.rerun()  # Refresh to show new config
+                else:
+                    st.error("❌ Failed to update configuration")
+            except Exception as e:
+                st.error(f"❌ Error updating configuration: {str(e)}")
+    else:
+        st.warning("⚠️ Could not fetch LLM configuration from backend")
+    
+    st.markdown("---") 
     st.subheader("Debugging (for new changes processing)")
     debug_level_options = {
         "Off": ("off", "No server-side debugging."),

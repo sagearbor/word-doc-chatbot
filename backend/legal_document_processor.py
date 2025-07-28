@@ -523,18 +523,76 @@ class LegalRequirementExtractor:
             return []
     
     def requirements_to_instructions(self, requirements: List[LegalRequirement], 
-                                   context: str = "") -> str:
+                                   context: str = "", use_llm: bool = False) -> str:
         """Convert legal requirements to LLM processing instructions
         
         Args:
             requirements: List of legal requirements
             context: Additional context for processing
+            use_llm: If True, use LLM to convert requirements to instructions
             
         Returns:
             Formatted instructions for LLM
         """
         if not requirements:
             return "No requirements found in fallback document."
+        
+        if use_llm:
+            return self._llm_requirements_to_instructions(requirements, context)
+        else:
+            return self._regex_requirements_to_instructions(requirements, context)
+    
+    def _llm_requirements_to_instructions(self, requirements: List[LegalRequirement], 
+                                        context: str = "") -> str:
+        """Use LLM to convert requirements to instructions intelligently"""
+        
+        # Prepare requirements for LLM analysis
+        req_texts = []
+        for i, req in enumerate(requirements, 1):
+            req_text = req.text.replace('\n', ' ').strip()
+            req_texts.append(f"{i}. {req_text} (Type: {req.requirement_type}, Priority: {req.priority})")
+        
+        requirements_text = '\n'.join(req_texts)
+        
+        prompt = f"""
+        You are an expert at converting legal requirements into specific document editing instructions.
+        
+        Given these legal requirements from a fallback document, generate specific "Change X to Y" instructions that can be applied to modify a target document.
+        
+        Requirements:
+        {requirements_text}
+        
+        {f"Additional Context: {context}" if context else ""}
+        
+        For each requirement, generate one or more specific instructions in this format:
+        "N. Change 'old text pattern' to 'new text with requirement'"
+        
+        Guidelines:
+        - Focus on commonly found patterns in legal documents
+        - Be specific about what text to find and what to replace it with
+        - Preserve legal language precision ("must", "shall", "required")
+        - For prohibitions, look for permissive language to make restrictive
+        - For timing requirements, look for vague terms like "reasonable timeframe"
+        - For quality requirements, look for general terms like "standards will be maintained"
+        
+        Return only the numbered instructions, nothing else.
+        """
+        
+        try:
+            llm_response = get_llm_analysis(prompt, "")
+            if llm_response and llm_response.strip() and llm_response != "{}":
+                print("Generated instructions using LLM")
+                return llm_response.strip()
+            else:
+                print("LLM response was empty, falling back to regex approach")
+                return self._regex_requirements_to_instructions(requirements, context)
+        except Exception as e:
+            print(f"Error generating LLM instructions, falling back to regex: {e}")
+            return self._regex_requirements_to_instructions(requirements, context)
+    
+    def _regex_requirements_to_instructions(self, requirements: List[LegalRequirement], 
+                                          context: str = "") -> str:
+        """Original hardcoded regex-based approach (kept as fallback)"""
         
         # Use the SAME format as regular processing that works perfectly
         instructions = []
@@ -596,9 +654,9 @@ def extract_fallback_requirements(fallback_doc_path: str) -> List[LegalRequireme
 
 def extract_requirements_with_llm(fallback_doc_path: str) -> List[LegalRequirement]:
     """
-    FUTURE: LLM-based intelligent requirement extraction
+    LLM-based intelligent requirement extraction
     
-    This will replace the brittle keyword-matching approach with intelligent
+    This replaces the brittle keyword-matching approach with intelligent
     analysis that can understand:
     - Comments and their intent
     - Tracked changes and what they suggest  
@@ -606,45 +664,67 @@ def extract_requirements_with_llm(fallback_doc_path: str) -> List[LegalRequireme
     - Context and document structure
     """
     
-    # TODO: Implement LLM-based extraction
-    # prompt = """
-    # Analyze this legal document including any comments and tracked changes.
-    # Extract all requirements, obligations, constraints, and rules.
-    # 
-    # For each requirement identify:
-    # - The actual requirement text
-    # - Type: mandatory, prohibited, recommended, conditional
-    # - Priority: critical, high, medium, low
-    # - Section/context where it appears
-    # - If it comes from comments or tracked changes, what the intent is
-    # 
-    # Look for:
-    # - Direct obligations ("must", "shall", "required")
-    # - Implicit requirements ("ensure", "verify", "confirm")
-    # - Prohibitions ("not permitted", "forbidden", "prohibited")
-    # - Standards and criteria ("meets standards", "complies with")
-    # - Comments suggesting changes ("add requirement for...", "needs compliance...")
-    # - Tracked changes showing evolution of requirements
-    # 
-    # Return structured JSON list of requirements.
-    # """
-    # 
-    # # Extract full document content including comments and tracked changes
-    # full_content = extract_document_with_comments_and_changes(fallback_doc_path)
-    # 
-    # # Send to LLM for intelligent analysis
-    # llm_response = get_llm_analysis(prompt, full_content)
-    # 
-    # # Parse LLM response into LegalRequirement objects
-    # return parse_llm_requirements_response(llm_response)
+    prompt = """
+    Analyze this legal document including any comments and tracked changes.
+    Extract all requirements, obligations, constraints, and rules.
     
-    # For now, fall back to basic extraction
-    extractor = LegalRequirementExtractor()
-    return extractor.extract_fallback_requirements(fallback_doc_path)
+    For each requirement identify:
+    - The actual requirement text
+    - Type: must/shall/required/prohibited/recommended
+    - Priority: 1 (critical), 2 (high), 3 (medium), 4 (low), 5 (optional)
+    - Section/context where it appears
+    - If it comes from comments or tracked changes, what the intent is
+    
+    Look for:
+    - Direct obligations ("must", "shall", "required")
+    - Implicit requirements ("ensure", "verify", "confirm")
+    - Prohibitions ("not permitted", "forbidden", "prohibited")
+    - Standards and criteria ("meets standards", "complies with")
+    - Comments suggesting changes ("add requirement for...", "needs compliance...")
+    - Tracked changes showing evolution of requirements
+    
+    Return structured JSON with this format:
+    {{
+        "requirements": [
+            {{
+                "text": "requirement text here",
+                "type": "must/shall/required/prohibited/recommended",
+                "priority": 1-5,
+                "section": "section identifier",
+                "context": "surrounding context",
+                "formatting": {{"bold": false, "italic": false, "underline": false}}
+            }}
+        ]
+    }}
+    """
+    
+    try:
+        # Extract full document content including comments and tracked changes
+        full_content = extract_document_with_comments_and_changes(fallback_doc_path)
+        
+        print("Using LLM-based intelligent requirement extraction...")
+        
+        # Send to LLM for intelligent analysis
+        llm_response = get_llm_analysis(prompt, full_content)
+        
+        print(f"LLM response length: {len(llm_response)} characters")
+        print(f"LLM response preview: {llm_response[:200]}...")
+        
+        # Parse LLM response into LegalRequirement objects
+        requirements = parse_llm_requirements_response(llm_response)
+        
+        print(f"LLM extracted {len(requirements)} requirements")
+        return requirements
+        
+    except Exception as e:
+        print(f"Error in LLM-based extraction, falling back to regex: {e}")
+        # Fall back to basic extraction
+        extractor = LegalRequirementExtractor()
+        return extractor.extract_fallback_requirements(fallback_doc_path)
 
 def extract_document_with_comments_and_changes(doc_path: str) -> str:
     """
-    FUTURE: Extract complete document content including:
+    Extract complete document content including:
     - Main text
     - Comments and their context
     - Tracked changes (insertions/deletions) 
@@ -652,89 +732,214 @@ def extract_document_with_comments_and_changes(doc_path: str) -> str:
     - Relationship between comments and text they reference
     """
     
-    # TODO: Implement comprehensive extraction
-    # This should extract:
-    # 1. Main document text
-    # 2. All comments with their anchored text
-    # 3. All tracked changes with author/date
-    # 4. Relationship mapping (which comment refers to which text)
-    # 
-    # Format for LLM:
-    # """
-    # MAIN TEXT:
-    # [document text]
-    # 
-    # COMMENTS:
-    # Comment 1 (by John, on "specific text"): "This needs to be more specific about compliance"
-    # Comment 2 (by Mary, on "section 3"): "Add requirement for data retention"
-    # 
-    # TRACKED CHANGES:
-    # Insertion by John: "must comply with GDPR" (added to section 2.1)
-    # Deletion by Mary: "may consider" (removed from section 1.3, replaced with "shall")
-    # """
-    
-    # For now, use basic text extraction
-    return extract_text_for_llm(doc_path)
+    try:
+        # Get the main document text
+        main_text = extract_text_for_llm(doc_path)
+        
+        # Get tracked changes information
+        try:
+            tracked_changes = extract_tracked_changes_as_text(doc_path)
+        except Exception as e:
+            print(f"Could not extract tracked changes: {e}")
+            tracked_changes = ""
+        
+        # For now, combine basic information
+        # TODO: Implement full comment extraction with anchored text relationships
+        
+        output_sections = ["MAIN TEXT:", main_text]
+        
+        if tracked_changes and tracked_changes.strip():
+            output_sections.extend(["", "TRACKED CHANGES:", tracked_changes])
+        else:
+            output_sections.extend(["", "TRACKED CHANGES:", "No tracked changes found in document."])
+        
+        # TODO: Add comment extraction
+        output_sections.extend(["", "COMMENTS:", "Comment extraction not yet implemented - focus on main text and tracked changes."])
+        
+        result = "\n".join(output_sections)
+        print(f"Extracted document content: {len(main_text)} chars main text, {len(tracked_changes)} chars tracked changes")
+        
+        return result
+        
+    except Exception as e:
+        print(f"Error extracting document with comments and changes: {e}")
+        # Fall back to basic text extraction
+        return extract_text_for_llm(doc_path)
 
 def generate_instructions_from_fallback(fallback_doc_path: str, context: str = "") -> str:
     """Generate LLM instructions from fallback document"""
     
-    # FUTURE: Use LLM-based extraction
-    # requirements = extract_requirements_with_llm(fallback_doc_path)
+    # Use LLM-based extraction if enabled
+    if USE_LLM_EXTRACTION:
+        print("🧠 Using intelligent LLM-based fallback analysis...")
+        try:
+            # NEW APPROACH: Extract conditional analysis instructions instead of requirements
+            instructions = extract_conditional_instructions_with_llm(fallback_doc_path, context)
+            if instructions and instructions.strip() and instructions.strip() not in ["No requirements found in fallback document.", ""]:
+                return instructions
+            else:
+                print("LLM conditional analysis returned empty, trying traditional approach...")
+        except Exception as e:
+            print(f"LLM conditional analysis failed: {e}")
+        
+        # Fallback to traditional requirement extraction
+        try:
+            requirements = extract_requirements_with_llm(fallback_doc_path)
+            if not requirements:
+                print("LLM extraction returned 0 requirements, trying regex fallback...")
+                extractor = LegalRequirementExtractor()
+                requirements = extractor.extract_fallback_requirements(fallback_doc_path)
+        except Exception as e:
+            print(f"LLM extraction failed, falling back to regex: {e}")
+            extractor = LegalRequirementExtractor()
+            requirements = extractor.extract_fallback_requirements(fallback_doc_path)
+    else:
+        # Use basic regex extraction
+        extractor = LegalRequirementExtractor()
+        requirements = extractor.extract_fallback_requirements(fallback_doc_path)
     
-    # For now: Use basic extraction
+    # Convert requirements to instructions
     extractor = LegalRequirementExtractor()
-    requirements = extractor.extract_fallback_requirements(fallback_doc_path)
-    return extractor.requirements_to_instructions(requirements, context)
+    instructions = extractor.requirements_to_instructions(requirements, context, use_llm=USE_LLM_INSTRUCTIONS)
+    
+    # If still no useful instructions, provide a helpful message
+    if not instructions or instructions.strip() in ["No requirements found in fallback document.", ""]:
+        return "Unable to extract meaningful requirements from the fallback document. Please check that the document contains clear obligations, requirements, or rules that should be applied to the main document."
+    
+    return instructions
 
-# Configuration for future LLM-based extraction
-USE_LLM_EXTRACTION = False  # Set to True when ready to enable intelligent extraction
+def extract_conditional_instructions_with_llm(fallback_doc_path: str, context: str = "") -> str:
+    """
+    NEW: Extract conditional analysis instructions from fallback document
+    This creates instructions that will be used to analyze the main document
+    """
+    
+    try:
+        # Get full document content including comments and tracked changes
+        full_content = extract_document_with_comments_and_changes(fallback_doc_path)
+        
+        print("🔍 Extracting conditional analysis instructions from fallback document...")
+        
+        # Specialized prompt for extracting conditional analysis instructions
+        prompt = f"""You are a legal document analysis expert. Your task is to analyze this fallback document and create specific analysis instructions that will be used to examine a main document.
+
+FALLBACK DOCUMENT CONTENT:
+{full_content}
+
+TASK:
+Extract all conditional rules, requirements, and analysis instructions from this fallback document. Focus on:
+
+1. **Conditional Requirements**: Look for "if...then" statements, conditions that trigger changes
+2. **Analysis Instructions**: Directions about what to look for in documents
+3. **Specific Changes**: Exact text replacements or additions required
+4. **Comments and Tracked Changes**: Pay special attention to comments that provide guidance
+
+OUTPUT FORMAT:
+Create analysis instructions that can be used to examine the main document. Format as numbered instructions:
+
+Example:
+1. Check if the term "affiliate" appears in the Study Site's legal entity name. If so, determine the legal relationship and change to "Affiliate" with definition: [definition text]
+2. Look for payment terms and change from flexible language to "Payment shall be made within 15 days"
+3. Review confidentiality clauses and strengthen language from "sensitive information" to "all confidential data"
+
+IMPORTANT:
+- Be specific about what to look for and what changes to make
+- Include exact replacement text when provided
+- Preserve conditional logic ("if...then" statements)
+- Include any definitions or additional text to be added
+- Focus on actionable instructions that can be applied to analyze another document
+
+Return only the numbered analysis instructions, nothing else.
+"""
+
+        # Send to LLM for analysis
+        llm_response = get_llm_analysis(prompt, "")
+        
+        print(f"🎯 Conditional analysis response length: {len(llm_response)} characters")
+        print(f"📝 Analysis instructions preview: {llm_response[:300]}...")
+        
+        if llm_response and llm_response.strip() and llm_response != "{}":
+            return llm_response.strip()
+        else:
+            print("❌ LLM returned empty conditional analysis")
+            return ""
+            
+    except Exception as e:
+        print(f"❌ Error in conditional instruction extraction: {e}")
+        return ""
+
+# Configuration for LLM-based extraction
+USE_LLM_EXTRACTION = True  # Set to True to enable intelligent requirement extraction
+USE_LLM_INSTRUCTIONS = True  # Set to True to enable intelligent instruction generation
 
 def get_llm_analysis(prompt: str, content: str) -> str:
     """
-    FUTURE: Send content to LLM for analysis
+    Send content to LLM for analysis
     """
-    # TODO: Implement LLM call
-    # from .ai_client import get_chat_response
-    # 
-    # messages = [
-    #     {"role": "system", "content": "You are an expert legal document analyst."},
-    #     {"role": "user", "content": f"{prompt}\n\nDocument content:\n{content}"}
-    # ]
-    # 
-    # return get_chat_response(messages, temperature=0.1, max_tokens=2000)
-    
-    return "{}"  # Placeholder
+    try:
+        from .ai_client import get_chat_response
+        
+        messages = [
+            {"role": "system", "content": "You are an expert legal document analyst."},
+            {"role": "user", "content": f"{prompt}\n\nDocument content:\n{content}"}
+        ]
+        
+        return get_chat_response(messages, temperature=0.0, seed=42, max_tokens=2000)
+    except Exception as e:
+        print(f"Error in LLM analysis: {e}")
+        return "{}"
 
 def parse_llm_requirements_response(llm_response: str) -> List[LegalRequirement]:
     """
-    FUTURE: Parse LLM JSON response into LegalRequirement objects
+    Parse LLM JSON response into LegalRequirement objects
     """
-    # TODO: Implement JSON parsing and validation
-    # import json
-    # 
-    # try:
-    #     requirements_data = json.loads(llm_response)
-    #     requirements = []
-    #     
-    #     for req_data in requirements_data:
-    #         req = LegalRequirement(
-    #             text=req_data.get("text", ""),
-    #             requirement_type=req_data.get("type", "unknown"),
-    #             priority=req_data.get("priority", 3),
-    #             section=req_data.get("section", "unknown"),
-    #             context=req_data.get("context", ""),
-    #             formatting=req_data.get("formatting", {})
-    #         )
-    #         requirements.append(req)
-    #     
-    #     return requirements
-    # 
-    # except json.JSONDecodeError:
-    #     print("Error: Could not parse LLM response as JSON")
-    #     return []
+    import json
     
-    return []  # Placeholder
+    if not llm_response or llm_response.strip() == "{}":
+        print("LLM response is empty or just empty braces")
+        return []
+    
+    try:
+        requirements_data = json.loads(llm_response)
+        requirements = []
+        
+        # Handle case where LLM returns a dict with a 'requirements' key
+        if isinstance(requirements_data, dict) and 'requirements' in requirements_data:
+            requirements_data = requirements_data['requirements']
+        
+        # Ensure we have a list
+        if not isinstance(requirements_data, list):
+            print(f"Error: LLM response is not a list of requirements, got {type(requirements_data)}")
+            print(f"Response content: {requirements_data}")
+            return []
+        
+        for req_data in requirements_data:
+            if not isinstance(req_data, dict):
+                print(f"Skipping invalid requirement data: {req_data}")
+                continue
+                
+            req = LegalRequirement(
+                text=req_data.get("text", ""),
+                requirement_type=req_data.get("type", "unknown"),
+                priority=req_data.get("priority", 3),
+                section=req_data.get("section", "unknown"),
+                context=req_data.get("context", ""),
+                formatting=req_data.get("formatting", {"bold": False, "italic": False, "underline": False})
+            )
+            
+            # Only add if we have meaningful text
+            if req.text and req.text.strip():
+                requirements.append(req)
+        
+        return requirements
+    
+    except json.JSONDecodeError as e:
+        print(f"Error: Could not parse LLM response as JSON: {e}")
+        print(f"Raw response: {llm_response[:500]}...")
+        return []
+    except Exception as e:
+        print(f"Error parsing LLM requirements response: {e}")
+        return []
 
 # Modified convenience function to use LLM when enabled
 def extract_fallback_requirements(fallback_doc_path: str) -> List[LegalRequirement]:
@@ -751,10 +956,62 @@ def extract_fallback_requirements(fallback_doc_path: str) -> List[LegalRequireme
     extractor = LegalRequirementExtractor()
     return extractor.extract_fallback_requirements(fallback_doc_path)
 
+# Helper functions to toggle LLM approaches
+def enable_llm_extraction():
+    """Enable LLM-based requirement extraction"""
+    global USE_LLM_EXTRACTION
+    USE_LLM_EXTRACTION = True
+    print("LLM-based requirement extraction ENABLED")
+
+def disable_llm_extraction():
+    """Disable LLM-based requirement extraction (use regex)"""
+    global USE_LLM_EXTRACTION
+    USE_LLM_EXTRACTION = False
+    print("LLM-based requirement extraction DISABLED (using regex)")
+
+def enable_llm_instructions():
+    """Enable LLM-based instruction generation"""
+    global USE_LLM_INSTRUCTIONS
+    USE_LLM_INSTRUCTIONS = True
+    print("LLM-based instruction generation ENABLED")
+
+def disable_llm_instructions():
+    """Disable LLM-based instruction generation (use hardcoded patterns)"""
+    global USE_LLM_INSTRUCTIONS
+    USE_LLM_INSTRUCTIONS = False
+    print("LLM-based instruction generation DISABLED (using hardcoded patterns)")
+
+def enable_full_llm_mode():
+    """Enable both LLM-based extraction and instruction generation"""
+    enable_llm_extraction()
+    enable_llm_instructions()
+    print("Full LLM mode ENABLED - using AI for both extraction and instruction generation")
+
+def disable_full_llm_mode():
+    """Disable both LLM-based approaches (full regex/hardcoded mode)"""
+    disable_llm_extraction()
+    disable_llm_instructions()
+    print("Full LLM mode DISABLED - using regex/hardcoded approaches")
+
+def get_current_mode():
+    """Get current processing mode"""
+    extraction_mode = "LLM" if USE_LLM_EXTRACTION else "Regex"
+    instruction_mode = "LLM" if USE_LLM_INSTRUCTIONS else "Hardcoded"
+    return f"Extraction: {extraction_mode}, Instructions: {instruction_mode}"
+
 if __name__ == "__main__":
     # Test the legal document parser
     print("Legal Document Processor - Test Mode")
     print("This module provides specialized parsing for complex legal documents.")
     print("Use parse_legal_document() or extract_fallback_requirements() functions.")
-    print(f"LLM-based extraction: {'ENABLED' if USE_LLM_EXTRACTION else 'DISABLED'}")
-    print("To enable LLM extraction: Set USE_LLM_EXTRACTION = True")
+    print(f"Current mode: {get_current_mode()}")
+    print()
+    print("Configuration functions:")
+    print("- enable_llm_extraction() / disable_llm_extraction()")
+    print("- enable_llm_instructions() / disable_llm_instructions()")
+    print("- enable_full_llm_mode() / disable_full_llm_mode()")
+    print("- get_current_mode()")
+    print()
+    print("To test LLM mode:")
+    print("  enable_full_llm_mode()")
+    print("  generate_instructions_from_fallback('path/to/fallback.docx')")

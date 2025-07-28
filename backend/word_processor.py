@@ -10,6 +10,7 @@ from docx import Document
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from typing import List, Dict, Tuple, Optional, Any
+from difflib import SequenceMatcher
 
 # --- Global Configuration Flags ---
 DEBUG_MODE = False
@@ -17,11 +18,92 @@ EXTENDED_DEBUG_MODE = False
 CASE_SENSITIVE_SEARCH = True
 ADD_COMMENTS_TO_CHANGES = False
 DEFAULT_AUTHOR_NAME = "LLM Editor"
+FUZZY_MATCHING_ENABLED = True
+FUZZY_MATCHING_THRESHOLD = 0.85  # 85% similarity required for fuzzy match
 
 # --- Constants ---
 ERROR_LOG_FILENAME_BASE = "change_log"
 HIGHLIGHT_COLOR_AMBIGUOUS_SKIPPED = "orange"
-ALLOWED_POST_BOUNDARY_PUNCTUATION = {',', ';', '.'}
+ALLOWED_POST_BOUNDARY_PUNCTUATION = {',', ';', '.', ':', '!', '?', ')', ']', '}', '"', "'"}
+
+# --- Fuzzy Matching Functions ---
+
+def fuzzy_search_best_match(target_text: str, search_text: str, threshold: float = FUZZY_MATCHING_THRESHOLD) -> Optional[Dict]:
+    """
+    Find the best fuzzy match for target_text within search_text
+    Returns dict with start, end, similarity, matched_text or None if no good match
+    """
+    if not FUZZY_MATCHING_ENABLED or len(target_text) < 3:
+        return None
+    
+    best_match = None
+    target_len = len(target_text)
+    
+    # Try different window sizes around the target length
+    for window_size in [target_len, target_len + 5, target_len - 5, target_len + 10, target_len - 10]:
+        if window_size < 3:
+            continue
+            
+        for i in range(len(search_text) - window_size + 1):
+            candidate = search_text[i:i + window_size]
+            similarity = SequenceMatcher(None, target_text.lower(), candidate.lower()).ratio()
+            
+            if similarity >= threshold:
+                if best_match is None or similarity > best_match['similarity']:
+                    best_match = {
+                        'start': i,
+                        'end': i + window_size,
+                        'similarity': similarity,
+                        'matched_text': candidate
+                    }
+    
+    return best_match
+
+def fuzzy_find_text_in_context(specific_text: str, context_text: str, context_start_in_doc: int) -> Optional[Dict]:
+    """
+    Find specific_text within context_text using fuzzy matching
+    Returns dict with global start/end positions or None
+    """
+    if not FUZZY_MATCHING_ENABLED:
+        return None
+    
+    fuzzy_match = fuzzy_search_best_match(specific_text, context_text)
+    if fuzzy_match:
+        return {
+            'global_start': context_start_in_doc + fuzzy_match['start'],
+            'global_end': context_start_in_doc + fuzzy_match['end'],
+            'matched_text': fuzzy_match['matched_text'],
+            'similarity': fuzzy_match['similarity']
+        }
+    return None
+
+def is_boundary_valid_fuzzy(text: str, start_pos: int, end_pos: int, full_text: str, similarity: float) -> bool:
+    """
+    More flexible boundary checking for fuzzy matches
+    Allows for slight punctuation mismatches if similarity is high
+    """
+    if similarity >= 0.95:  # Very high confidence - be more lenient
+        return True
+        
+    # Standard boundary check
+    char_before = full_text[start_pos - 1] if start_pos > 0 else None
+    char_after = full_text[end_pos] if end_pos < len(full_text) else None
+    
+    is_start_ok = (start_pos == 0 or (char_before and char_before.isspace()))
+    is_end_ok = (end_pos == len(full_text) or (char_after and (char_after.isspace() or char_after in ALLOWED_POST_BOUNDARY_PUNCTUATION)))
+    
+    if is_start_ok and is_end_ok:
+        return True
+    
+    # For medium confidence fuzzy matches, be slightly more lenient with punctuation
+    if similarity >= 0.90:
+        # Allow common punctuation mismatches
+        if char_before and char_before in ['"', "'", '(', '[', '{']:
+            is_start_ok = True
+        if char_after and char_after in ['"', "'", ')', ']', '}', ',', '.', ';', ':', ' ']:
+            is_end_ok = True
+    
+    return is_start_ok and is_end_ok
 
 # --- XML Helper Functions ---
 # ... (keep existing create_del_element, create_ins_element, create_run_element_with_text) ...
@@ -339,11 +421,22 @@ def replace_text_in_paragraph_with_tracked_change(
     specific_text_to_find_llm_processed = specific_old_text_llm if case_sensitive_flag else specific_old_text_llm.lower()
     try:
         specific_start_in_context = text_to_search_specific_within.index(specific_text_to_find_llm_processed)
+        actual_specific_old_text_to_delete = actual_context_found_in_doc_str[specific_start_in_context : specific_start_in_context + len(specific_old_text_llm)]
+        fuzzy_match_used = False
+        fuzzy_similarity = 1.0
     except ValueError:
-        log_debug(f"P{current_para_idx+1}: Specific text '{specific_old_text_llm}' NOT FOUND within the unique context '{actual_context_found_in_doc_str}'. Change skipped.")
-        ambiguous_or_failed_changes_log.append({"paragraph_index": current_para_idx, "issue": "Specific text not found within unique context.", **edit_details_for_log});
-        return "SPECIFIC_TEXT_NOT_IN_CONTEXT", None
-    actual_specific_old_text_to_delete = actual_context_found_in_doc_str[specific_start_in_context : specific_start_in_context + len(specific_old_text_llm)]
+        # Try fuzzy matching as fallback
+        fuzzy_match = fuzzy_search_best_match(specific_text_to_find_llm_processed, text_to_search_specific_within)
+        if fuzzy_match:
+            specific_start_in_context = fuzzy_match['start']
+            actual_specific_old_text_to_delete = fuzzy_match['matched_text']
+            fuzzy_match_used = True
+            fuzzy_similarity = fuzzy_match['similarity']
+            log_debug(f"P{current_para_idx+1}: Exact match failed, using fuzzy match: '{actual_specific_old_text_to_delete}' (similarity: {fuzzy_similarity:.2f})")
+        else:
+            log_debug(f"P{current_para_idx+1}: Specific text '{specific_old_text_llm}' NOT FOUND within the unique context '{actual_context_found_in_doc_str}'. Change skipped.")
+            ambiguous_or_failed_changes_log.append({"paragraph_index": current_para_idx, "issue": "Specific text not found within unique context (exact or fuzzy).", **edit_details_for_log});
+            return "SPECIFIC_TEXT_NOT_IN_CONTEXT", None
     global_specific_start_offset = unique_context_match_info['start'] + specific_start_in_context
     global_specific_end_offset = global_specific_start_offset + len(actual_specific_old_text_to_delete)
     log_debug(f"P{current_para_idx+1}: LLM specific_old_text: '{specific_old_text_llm}' (len {len(specific_old_text_llm)})")
@@ -354,13 +447,27 @@ def replace_text_in_paragraph_with_tracked_change(
         ambiguous_or_failed_changes_log.append({"paragraph_index": current_para_idx, "issue": "Length mismatch between LLM specific_old_text and actual text to delete.", "type":"CriticalWarning", **edit_details_for_log})
     char_before_specific = visible_paragraph_text_original_case[global_specific_start_offset - 1] if global_specific_start_offset > 0 else None
     char_after_specific = visible_paragraph_text_original_case[global_specific_end_offset] if global_specific_end_offset < len(visible_paragraph_text_original_case) else None
-    is_start_boundary_ok = (global_specific_start_offset == 0 or (char_before_specific is not None and char_before_specific.isspace()))
-    is_end_boundary_ok = (global_specific_end_offset == len(visible_paragraph_text_original_case) or (char_after_specific is not None and (char_after_specific.isspace() or char_after_specific in ALLOWED_POST_BOUNDARY_PUNCTUATION)))
-    if not (is_start_boundary_ok and is_end_boundary_ok):
-        log_message = (f"P{current_para_idx+1}: Specific text '{actual_specific_old_text_to_delete}' is NOT validly bounded. " f"Preceded by: '{char_before_specific}', Followed by: '{char_after_specific}'. Change skipped.")
+    
+    # Use fuzzy boundary checking if fuzzy match was used
+    if fuzzy_match_used:
+        boundary_valid = is_boundary_valid_fuzzy(actual_specific_old_text_to_delete, global_specific_start_offset, global_specific_end_offset, visible_paragraph_text_original_case, fuzzy_similarity)
+        boundary_type = "fuzzy"
+    else:
+        is_start_boundary_ok = (global_specific_start_offset == 0 or (char_before_specific is not None and char_before_specific.isspace()))
+        is_end_boundary_ok = (global_specific_end_offset == len(visible_paragraph_text_original_case) or (char_after_specific is not None and (char_after_specific.isspace() or char_after_specific in ALLOWED_POST_BOUNDARY_PUNCTUATION)))
+        boundary_valid = is_start_boundary_ok and is_end_boundary_ok
+        boundary_type = "exact"
+    
+    if not boundary_valid:
+        match_info = f" (fuzzy match, similarity: {fuzzy_similarity:.2f})" if fuzzy_match_used else ""
+        log_message = (f"P{current_para_idx+1}: Specific text '{actual_specific_old_text_to_delete}' is NOT validly bounded{match_info}. " f"Preceded by: '{char_before_specific}', Followed by: '{char_after_specific}'. Change skipped.")
         log_debug(log_message)
-        ambiguous_or_failed_changes_log.append({"paragraph_index": current_para_idx, "issue": f"Skipped: Specific text not validly bounded (Prev: '{char_before_specific}', Next: '{char_after_specific}')", **edit_details_for_log})
+        ambiguous_or_failed_changes_log.append({"paragraph_index": current_para_idx, "issue": f"Skipped: Specific text not validly bounded (Prev: '{char_before_specific}', Next: '{char_after_specific}') [{boundary_type} match]", **edit_details_for_log})
         return "SKIPPED_INVALID_BOUNDARY", None
+    
+    if fuzzy_match_used:
+        log_debug(f"P{current_para_idx+1}: ✅ Fuzzy match boundary validation passed (similarity: {fuzzy_similarity:.2f})")
+        print(f"SUCCESS: P{current_para_idx+1}: Using fuzzy match (similarity: {fuzzy_similarity:.2f}) for '{actual_specific_old_text_to_delete}'")
     involved_element_infos = []
     first_involved_r_element_for_style = None
     for item_map_entry in elements_map:
@@ -552,7 +659,20 @@ def process_document_with_edits(
                                 specific_end_abs = specific_start_abs + len(specific_text_to_markup_val)
                                 spans_to_markup_this_edit_item.append({"start":specific_start_abs, "end":specific_end_abs, "text":specific_text_to_markup_val})
                                 current_offset_in_ctx = found_idx_in_ctx + len(specific_text_to_markup_val)
-                            except ValueError: break
+                            except ValueError:
+                                # Try fuzzy matching for ambiguous contexts too
+                                remaining_text = ctx_text_search_val[current_offset_in_ctx:]
+                                fuzzy_match = fuzzy_search_best_match(s_old_search_val, remaining_text)
+                                if fuzzy_match:
+                                    found_idx_in_ctx = current_offset_in_ctx + fuzzy_match['start']
+                                    specific_text_to_markup_val = fuzzy_match['matched_text']
+                                    specific_start_abs = ctx_start_global + found_idx_in_ctx
+                                    specific_end_abs = specific_start_abs + len(specific_text_to_markup_val)
+                                    spans_to_markup_this_edit_item.append({"start":specific_start_abs, "end":specific_end_abs, "text":specific_text_to_markup_val})
+                                    current_offset_in_ctx = found_idx_in_ctx + len(specific_text_to_markup_val)
+                                    log_debug(f"P{para_idx+1}: Used fuzzy match in ambiguous context: '{specific_text_to_markup_val}' (similarity: {fuzzy_match['similarity']:.2f})")
+                                else:
+                                    break
                     spans_to_markup_this_edit_item.sort(key=lambda x:x["start"], reverse=True)
                     applied_any_markup_for_this_ambiguity = False
                     for span_info in spans_to_markup_this_edit_item:
