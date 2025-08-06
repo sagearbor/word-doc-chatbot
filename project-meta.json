@@ -1,0 +1,1 @@
+{"name":"Word Document Tracked Changes Chatbot","description":"This project showcases a chatbot that updates Word docs with LLM suggestions. It integrates FastAPI and Streamlit for document processing and interaction.","technologies":["FastAPI","Streamlit","Python","docx","LLM"],"category":"web-app","status":"active","language":"Python"}
