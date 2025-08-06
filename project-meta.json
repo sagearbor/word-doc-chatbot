@@ -1,0 +1,1 @@
+{"name":"Word Document Tracked Changes Chatbot","description":"This demo updates Word docs with edits from an LLM. It uses FastAPI and Streamlit.","technologies":["FastAPI","Streamlit","Python","DOCX","LLM"],"category":"web-app","status":"active","language":"Python"}
