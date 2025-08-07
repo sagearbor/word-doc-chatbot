@@ -1,16 +1,17 @@
 {
   "name": "Word Document Tracked Changes Chatbot",
-  "description": "A demo showing how a Word document can be updated with LLM suggestions.",
+  "description": "Demo for updating Word docs with LLM suggested changes. It uses FastAPI and Streamlit.",
   "technologies": [
     "FastAPI",
     "Streamlit",
     "Python",
-    "DOCX"
+    "DOCX",
+    "LLM"
   ],
   "category": [
     "chatbot",
-    "api",
-    "web-app"
+    "web-app",
+    "api"
   ],
   "status": "active",
   "language": [
