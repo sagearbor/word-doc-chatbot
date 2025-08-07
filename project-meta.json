@@ -1,1 +1,26 @@
-{"name":"Word Document Tracked Changes Chatbot","description":"This project demonstrates updating Word documents using LLMs for tracked changes. It features a FastAPI backend and a Streamlit frontend for interaction.","technologies":["FastAPI","Streamlit","Python","DOCX"],"category":["web-app","api"],"status":"active","language":["Python"],"hosted_url":null}
+{
+  "name": "Word Document Tracked Changes Chatbot",
+  "description": "A demo showing how a Word document can be updated with LLM suggestions.",
+  "technologies": [
+    "FastAPI",
+    "Streamlit",
+    "Python",
+    "DOCX"
+  ],
+  "category": [
+    "chatbot",
+    "api",
+    "web-app"
+  ],
+  "status": "active",
+  "language": [
+    "Python"
+  ],
+  "hosted_url": null,
+  "activity": {
+    "commits_30d": 1,
+    "last_commit": "2025-08-07",
+    "contributors": 0,
+    "hotness_score": 32
+  }
+}
