@@ -743,8 +743,38 @@ def extract_document_with_comments_and_changes(doc_path: str) -> str:
             print(f"Could not extract tracked changes: {e}")
             tracked_changes = ""
         
-        # For now, combine basic information
-        # TODO: Implement full comment extraction with anchored text relationships
+        # Extract comments from the document
+        comments_text = ""
+        try:
+            from docx import Document
+            doc = Document(doc_path)
+            
+            if doc.comments and len(doc.comments) > 0:
+                comment_parts = []
+                for i, comment in enumerate(doc.comments):
+                    # Get comment details
+                    author = getattr(comment, 'author', 'Unknown')
+                    text = comment.text if hasattr(comment, 'text') else str(comment)
+                    
+                    # Try to get the text that the comment references
+                    referenced_text = "Unknown reference"
+                    try:
+                        if hasattr(comment, '_element') and comment._element is not None:
+                            # Try to find the text this comment is anchored to
+                            # This is a simplified approach - could be enhanced
+                            referenced_text = "Text reference extraction needs enhancement"
+                    except:
+                        pass
+                    
+                    comment_parts.append(f"Comment {i+1} (Author: {author}): {text}")
+                    if "fallback" in text.lower() or "minimum" in text.lower() or "floor" in text.lower() or "$" in text:
+                        comment_parts.append(f"  -> CRITICAL REQUIREMENT DETECTED")
+                
+                comments_text = "\n".join(comment_parts)
+            else:
+                comments_text = "No comments found in document."
+        except Exception as e:
+            comments_text = f"Error extracting comments: {e}"
         
         output_sections = ["MAIN TEXT:", main_text]
         
@@ -753,8 +783,7 @@ def extract_document_with_comments_and_changes(doc_path: str) -> str:
         else:
             output_sections.extend(["", "TRACKED CHANGES:", "No tracked changes found in document."])
         
-        # TODO: Add comment extraction
-        output_sections.extend(["", "COMMENTS:", "Comment extraction not yet implemented - focus on main text and tracked changes."])
+        output_sections.extend(["", "COMMENTS:", comments_text])
         
         result = "\n".join(output_sections)
         print(f"Extracted document content: {len(main_text)} chars main text, {len(tracked_changes)} chars tracked changes")

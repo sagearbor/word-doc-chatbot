@@ -9,7 +9,12 @@
       "Bash(chmod:*)",
       "Bash(ls:*)",
       "Bash(find:*)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Bash(netstat:*)",
+      "Bash(fuser:*)",
+      "Bash(streamlit run:*)",
+      "Bash(export:*)",
+      "Bash(BACKEND_URL=\"http://127.0.0.1:8888\" streamlit run frontend/streamlit_app.py)"
     ],
     "deny": []
   }
