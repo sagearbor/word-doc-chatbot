@@ -39,21 +39,29 @@ graph TD
     C --> D[Apply Tracked Changes]
     D --> E[Download Modified Document]
     
-    F[Fallback Document] --> G[Extract Requirements]
-    G --> H[Merge Instructions]
-    H --> B
+    F[Fallback Document] --> G[Extract Text & Tracked Changes]
+    G --> H[Extract Comments & Critical Requirements]
+    H --> I[Identify Floor/Minimum Requirements]
+    I --> J[Merge Instructions]
+    J --> B
     
     subgraph "AI Providers"
-        I[OpenAI]
-        J[Anthropic]
-        K[Azure OpenAI]
-        L[Google]
+        K[OpenAI]
+        L[Anthropic]
+        M[Azure OpenAI]
+        N[Google]
     end
     
-    B --> I
-    B --> J
     B --> K
     B --> L
+    B --> M
+    B --> N
+    
+    subgraph "Fallback Processing"
+        H --> O[Comment Bubble Detection]
+        O --> P[Flag $ / Floor / Minimum Terms]
+        P --> I
+    end
 ```
 
 ## Main Components

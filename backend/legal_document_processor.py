@@ -795,8 +795,26 @@ def extract_document_with_comments_and_changes(doc_path: str) -> str:
         # Fall back to basic text extraction
         return extract_text_for_llm(doc_path)
 
-def generate_instructions_from_fallback(fallback_doc_path: str, context: str = "") -> str:
-    """Generate LLM instructions from fallback document"""
+def generate_instructions_from_fallback(fallback_doc_path: str, context: str = "", main_doc_path: str = None) -> str:
+    """Generate LLM instructions from fallback document
+    
+    Args:
+        fallback_doc_path: Path to fallback document
+        context: Additional context for processing 
+        main_doc_path: Optional path to main document for comparative analysis
+    """
+    
+    # Check if comparative analysis should be used (both documents available + flag enabled)
+    if USE_COMPARATIVE_ANALYSIS and main_doc_path and os.path.exists(main_doc_path):
+        print("🔄 Using comparative analysis (both documents sent to LLM together)...")
+        try:
+            instructions = compare_documents_directly_with_llm(main_doc_path, fallback_doc_path)
+            if instructions and instructions.strip() and instructions.strip() not in ["No requirements found in fallback document.", ""]:
+                return instructions
+            else:
+                print("Comparative analysis returned empty, falling back to single-doc analysis...")
+        except Exception as e:
+            print(f"Comparative analysis failed: {e}, falling back to single-doc analysis...")
     
     # Use LLM-based extraction if enabled
     if USE_LLM_EXTRACTION:
@@ -856,20 +874,39 @@ FALLBACK DOCUMENT CONTENT:
 {full_content}
 
 TASK:
-Extract all conditional rules, requirements, and analysis instructions from this fallback document. Focus on:
+Extract ALL requirements, changes, and analysis instructions from this fallback document. Look for:
 
-1. **Conditional Requirements**: Look for "if...then" statements, conditions that trigger changes
-2. **Analysis Instructions**: Directions about what to look for in documents
-3. **Specific Changes**: Exact text replacements or additions required
-4. **Comments and Tracked Changes**: Pay special attention to comments that provide guidance
+1. **Comments**: All comment text contains critical requirements - extract each one as a separate instruction
+2. **Inline Requirements**: Text in parentheses like "(floor $8,800 if scope reduced)" - these are minimum requirements
+3. **Conditional Logic**: "if...then" statements that trigger changes
+4. **Text Differences**: Compare similar phrases - if fallback says "state and federal" but typical contracts say just "state", create instruction to add "federal"
+5. **Monetary Values**: Any dollar amounts, percentages, or numeric minimums/maximums
+6. **Time Periods**: Payment terms, review periods, deadlines that differ from standard terms
+7. **Regulatory Language**: Differences in compliance or regulatory references
+
+CRITICAL ANALYSIS APPROACH:
+- **Every comment** should become at least one instruction
+- **Every parenthetical note** like "(floor $X)" should create a minimum requirement instruction  
+- **Every dollar amount** should be checked against typical contract amounts
+- **Every time period** should be analyzed for minimum/maximum requirements
+- **Compare text carefully** - "state regulations" vs "state and federal regulations" is a significant difference
 
 OUTPUT FORMAT:
 Create analysis instructions that can be used to examine the main document. Format as numbered instructions:
 
-Example:
-1. Check if the term "affiliate" appears in the Study Site's legal entity name. If so, determine the legal relationship and change to "Affiliate" with definition: [definition text]
-2. Look for payment terms and change from flexible language to "Payment shall be made within 15 days"
-3. Review confidentiality clauses and strengthen language from "sensitive information" to "all confidential data"
+Examples:
+1. If document contains specific entity relationship terms, compare with fallback requirements for proper definitions and classifications
+2. For monetary values, check if fallback document specifies minimum amounts or floor requirements
+3. For regulatory references, compare fallback language against main document for completeness
+4. For time periods and deadlines, verify main document meets minimum requirements specified in fallback
+5. For budget or fee structures, ensure main document meets any minimum thresholds from fallback
+
+MANDATORY REQUIREMENTS TO CHECK:
+- Generate instructions for EVERY comment found in the document
+- Generate instructions for EVERY parenthetical requirement or conditional note
+- Generate instructions for EVERY monetary value, minimum, or threshold mentioned
+- Generate instructions for EVERY time period, deadline, or duration requirement
+- Compare ALL substantive terms against standard contract language for variations
 
 IMPORTANT:
 - Be specific about what to look for and what changes to make
@@ -897,9 +934,87 @@ Return only the numbered analysis instructions, nothing else.
         print(f"❌ Error in conditional instruction extraction: {e}")
         return ""
 
+def compare_documents_directly_with_llm(main_doc_path: str, fallback_doc_path: str) -> str:
+    """
+    NEW: Direct comparative analysis - send both documents to LLM together
+    This allows the LLM to see both documents and identify actual differences
+    """
+    
+    try:
+        # Get full content of both documents including comments and tracked changes
+        main_content = extract_document_with_comments_and_changes(main_doc_path)
+        fallback_content = extract_document_with_comments_and_changes(fallback_doc_path)
+        
+        print("🔍 Performing direct comparative analysis of both documents...")
+        
+        # Comparative analysis prompt
+        prompt = f"""You are a legal document comparison expert. You have been given two versions of a legal document:
+
+1. MAIN DOCUMENT (to be modified)
+2. FALLBACK DOCUMENT (contains requirements/changes to apply)
+
+Your task is to compare these documents and identify specific changes that need to be made to the MAIN document to incorporate the requirements from the FALLBACK document.
+
+MAIN DOCUMENT:
+{main_content}
+
+---SEPARATOR---
+
+FALLBACK DOCUMENT:
+{fallback_content}
+
+INSTRUCTIONS:
+Compare these documents section by section and identify:
+
+1. **Text Differences**: Where the fallback has different wording that should replace text in the main document
+2. **Additional Requirements**: Where the fallback has requirements not present in the main document
+3. **Comment Requirements**: Any requirements specified in the fallback document's comments
+4. **Monetary/Numeric Differences**: Different amounts, percentages, timeframes
+5. **Regulatory/Compliance Differences**: Different regulatory references or compliance requirements
+
+For each difference found, provide:
+- **Location**: Where in the main document the change should be made (quote the relevant text)
+- **Current Text**: The exact text in the main document that needs changing
+- **New Text**: The exact replacement text from the fallback document
+- **Reason**: Why this change is needed (based on fallback requirements)
+
+OUTPUT FORMAT:
+Provide a numbered list of specific changes:
+
+1. [Location in main doc] Change "[current text]" to "[new text]" because [reason from fallback]
+2. [Location in main doc] Add "[new text]" because [requirement from fallback]
+3. etc.
+
+IMPORTANT:
+- Only suggest changes where there are actual differences between the documents
+- Be specific about exact text to change
+- Include the reasoning based on what you see in the fallback document
+- Focus on substantive differences, not minor formatting
+- Pay special attention to comments in the fallback document as these often contain critical requirements
+
+Return only the numbered list of changes, nothing else.
+"""
+
+        # Send to LLM for analysis
+        llm_response = get_llm_analysis(prompt, "")
+        
+        print(f"🎯 Comparative analysis response length: {len(llm_response)} characters")
+        print(f"📝 Comparative analysis preview: {llm_response[:300]}...")
+        
+        if llm_response and llm_response.strip() and llm_response != "{}":
+            return llm_response.strip()
+        else:
+            print("❌ LLM returned empty comparative analysis")
+            return ""
+            
+    except Exception as e:
+        print(f"❌ Error in comparative analysis: {e}")
+        return ""
+
 # Configuration for LLM-based extraction
 USE_LLM_EXTRACTION = True  # Set to True to enable intelligent requirement extraction
 USE_LLM_INSTRUCTIONS = True  # Set to True to enable intelligent instruction generation
+USE_COMPARATIVE_ANALYSIS = True  # Set to True to enable direct document comparison (both docs sent to LLM together)
 
 def get_llm_analysis(prompt: str, content: str) -> str:
     """
@@ -1010,6 +1125,18 @@ def disable_llm_instructions():
     USE_LLM_INSTRUCTIONS = False
     print("LLM-based instruction generation DISABLED (using hardcoded patterns)")
 
+def enable_comparative_analysis():
+    """Enable direct document comparison (both docs sent to LLM together)"""
+    global USE_COMPARATIVE_ANALYSIS
+    USE_COMPARATIVE_ANALYSIS = True
+    print("Comparative analysis ENABLED (both documents sent to LLM together)")
+
+def disable_comparative_analysis():
+    """Disable direct document comparison (use separate analysis approach)"""
+    global USE_COMPARATIVE_ANALYSIS
+    USE_COMPARATIVE_ANALYSIS = False
+    print("Comparative analysis DISABLED (using separate analysis approach)")
+
 def enable_full_llm_mode():
     """Enable both LLM-based extraction and instruction generation"""
     enable_llm_extraction()
@@ -1026,7 +1153,8 @@ def get_current_mode():
     """Get current processing mode"""
     extraction_mode = "LLM" if USE_LLM_EXTRACTION else "Regex"
     instruction_mode = "LLM" if USE_LLM_INSTRUCTIONS else "Hardcoded"
-    return f"Extraction: {extraction_mode}, Instructions: {instruction_mode}"
+    comparative_mode = "Enabled" if USE_COMPARATIVE_ANALYSIS else "Disabled"
+    return f"Extraction: {extraction_mode}, Instructions: {instruction_mode}, Comparative: {comparative_mode}"
 
 if __name__ == "__main__":
     # Test the legal document parser

@@ -569,7 +569,8 @@ async def process_document_with_fallback(
             print(f"[PID:{os.getpid()}] Using fixed generate_instructions_from_fallback function...")
             fallback_instructions = generate_instructions_from_fallback(
                 fallback_path, 
-                context=f"Processing {input_filename} with fallback requirements"
+                context=f"Processing {input_filename} with fallback requirements",
+                main_doc_path=input_path
             )
             print(f"[PID:{os.getpid()}] Generated {len(fallback_instructions)} characters of fallback instructions")
             
