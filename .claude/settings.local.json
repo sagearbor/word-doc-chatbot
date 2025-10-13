@@ -17,7 +17,8 @@
       "Bash(BACKEND_URL=\"http://127.0.0.1:8888\" streamlit run frontend/streamlit_app.py)",
       "Bash(pgrep:*)",
       "Bash(pkill:*)",
-      "mcp__archon__list_projects"
+      "mcp__archon__list_projects",
+      "mcp__archon__get_task"
     ],
     "deny": []
   }

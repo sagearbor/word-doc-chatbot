@@ -55,8 +55,8 @@ Open the URL shown by Streamlit and upload a `.docx` file. Type instructions in 
 2.  **Create and activate a virtual environment (recommended):**
     ```bash
     python -m venv venv
-    source source venv/Scripts/activate # Use On Windows use 
-    # source venv/bin/activate  # Use on Unix, Mac, WSL systems
+    source venv/bin/activate  # Use on Unix, Mac, WSL systems
+    # source source venv/Scripts/activate # Use On Windows use 
     ```
 
 
@@ -95,11 +95,21 @@ Open your browser and go to the URL provided by Streamlit (usually `http://local
 
 ### Configuring the Backend URL
 
-The frontend looks for a `BACKEND_URL` environment variable to know where the FastAPI service is running. If this variable is not set, it defaults to `http://localhost:8000`. When deploying the backend to a different host (for example on Azure), set this variable before starting Streamlit:
+The frontend looks for a `BACKEND_URL` environment variable to know where the FastAPI service is running. If this variable is not set, it defaults to `http://localhost:8061`. When deploying the backend to a different host (for example on Azure), set this variable before starting Streamlit:
 
 ```bash
 export BACKEND_URL="https://your-backend.example.com"
 streamlit run streamlit_app.py
+```
+
+**Testing with Custom Ports:** If you need to run on different ports (e.g., if the default port is already in use), you can override them on the command line:
+
+```bash
+# Terminal 1: Start backend on custom port
+uvicorn backend.main:app --reload --port 9999
+
+# Terminal 2: Start frontend with matching backend URL and custom Streamlit port
+BACKEND_URL=http://localhost:9999 streamlit run frontend/streamlit_app.py --server.port 8502
 ```
 
 ### Local Testing
