@@ -399,21 +399,30 @@ def replace_text_in_paragraph_with_tracked_change(
     search_text_in_doc = visible_paragraph_text_original_case if case_sensitive_flag else visible_paragraph_text_original_case.lower()
     search_context_from_llm_processed = contextual_old_text_llm if case_sensitive_flag else contextual_old_text_llm.lower()
     log_debug(f"P{current_para_idx+1}: Current visible paragraph text (len {len(visible_paragraph_text_original_case)}): '{visible_paragraph_text_original_case[:60]}{'...' if len(visible_paragraph_text_original_case)>60 else ''}'")
-    occurrences_of_context = []
-    try:
-        for match in re.finditer(re.escape(search_context_from_llm_processed), search_text_in_doc):
-            occurrences_of_context.append({"start": match.start(), "end": match.end(), "text": visible_paragraph_text_original_case[match.start():match.end()]})
-    except re.error as e:
-        ambiguous_or_failed_changes_log.append({"paragraph_index": current_para_idx, "issue": f"Regex error searching for context: {e}", **edit_details_for_log});
-        return "REGEX_ERROR_IN_CONTEXT_SEARCH", None
-    if not occurrences_of_context:
-        log_debug(f"P{current_para_idx+1}: LLM Context '{contextual_old_text_llm[:30]}...' not found in paragraph text.");
-        return "CONTEXT_NOT_FOUND", None
-    if len(occurrences_of_context) > 1:
-        log_debug(f"P{current_para_idx+1}: LLM Context '{contextual_old_text_llm[:30]}...' is AMBIGUOUS ({len(occurrences_of_context)} found in paragraph).")
-        return "CONTEXT_AMBIGUOUS", occurrences_of_context
-    unique_context_match_info = occurrences_of_context[0]
-    actual_context_found_in_doc_str = unique_context_match_info["text"]
+
+    # Check if context contains newlines (multi-paragraph) - if so, skip context matching
+    if '\n' in contextual_old_text_llm or '\\n' in contextual_old_text_llm:
+        log_debug(f"P{current_para_idx+1}: LLM Context contains newlines (multi-paragraph), skipping context matching. Searching for specific text directly.")
+        # Use the whole paragraph as context
+        unique_context_match_info = {"start": 0, "end": len(visible_paragraph_text_original_case), "text": visible_paragraph_text_original_case}
+        actual_context_found_in_doc_str = visible_paragraph_text_original_case
+    else:
+        # Original context matching logic
+        occurrences_of_context = []
+        try:
+            for match in re.finditer(re.escape(search_context_from_llm_processed), search_text_in_doc):
+                occurrences_of_context.append({"start": match.start(), "end": match.end(), "text": visible_paragraph_text_original_case[match.start():match.end()]})
+        except re.error as e:
+            ambiguous_or_failed_changes_log.append({"paragraph_index": current_para_idx, "issue": f"Regex error searching for context: {e}", **edit_details_for_log});
+            return "REGEX_ERROR_IN_CONTEXT_SEARCH", None
+        if not occurrences_of_context:
+            log_debug(f"P{current_para_idx+1}: LLM Context '{contextual_old_text_llm[:30]}...' not found in paragraph text.");
+            return "CONTEXT_NOT_FOUND", None
+        if len(occurrences_of_context) > 1:
+            log_debug(f"P{current_para_idx+1}: LLM Context '{contextual_old_text_llm[:30]}...' is AMBIGUOUS ({len(occurrences_of_context)} found in paragraph).")
+            return "CONTEXT_AMBIGUOUS", occurrences_of_context
+        unique_context_match_info = occurrences_of_context[0]
+        actual_context_found_in_doc_str = unique_context_match_info["text"]
     prefix_display = visible_paragraph_text_original_case[max(0, unique_context_match_info['start']-10) : unique_context_match_info['start']]
     suffix_display = visible_paragraph_text_original_case[unique_context_match_info['end'] : min(len(visible_paragraph_text_original_case), unique_context_match_info['end']+10)]
     log_debug(f"P{current_para_idx+1}: Unique LLM context found: '...{prefix_display}[{actual_context_found_in_doc_str}]{suffix_display}...' at {unique_context_match_info['start']}-{unique_context_match_info['end']}")
@@ -576,8 +585,8 @@ def process_document_with_edits(
     # Text extraction verification disabled
     error_log_file_path: Optional[str] = None
     global DEBUG_MODE, EXTENDED_DEBUG_MODE, CASE_SENSITIVE_SEARCH, ADD_COMMENTS_TO_CHANGES
-    DEBUG_MODE = False  # Force debug off
-    EXTENDED_DEBUG_MODE = False  # Force extended debug off
+    DEBUG_MODE = debug_mode_flag  # Use flag from function parameter
+    EXTENDED_DEBUG_MODE = extended_debug_mode_flag  # Use flag from function parameter
     CASE_SENSITIVE_SEARCH = case_sensitive_flag
     ADD_COMMENTS_TO_CHANGES = False  # Force comments off
     # Debug output disabled

@@ -6,6 +6,10 @@ from .config import AIConfig
 
 os.environ['LITELLM_LOG'] = 'DEBUG' # Recommended way to enable LiteLLM debug logs
 
+# Enable automatic dropping of unsupported parameters for different models
+# This is critical for GPT-5 models which don't support temperature=0.0
+litellm.drop_params = True
+
 class UnifiedAIClient:
     """Unified client for multiple AI providers using LiteLLM."""
     

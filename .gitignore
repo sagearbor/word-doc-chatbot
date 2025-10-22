@@ -9,6 +9,9 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+# AIs
+.claude
+
 # C extensions
 *.so
 
@@ -122,3 +125,4 @@ temp/
 # Database
 *.db
 *.sqlite3
+*.bak

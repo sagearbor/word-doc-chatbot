@@ -1,5 +1,6 @@
 import json
 import re
+import time
 from typing import List, Dict, Optional, Any
 
 from .ai_client import get_chat_response # Assuming .ai_client is in the same directory or correctly pathed
@@ -421,6 +422,14 @@ CRITICAL UNDERSTANDING:
 - DO NOT look for text from the fallback document in the main document
 - Only suggest changes for text you can actually see in the main document content
 
+**CRITICAL PARAGRAPH BOUNDARY RULE:**
+- The `specific_old_text` and `contextual_old_text` MUST exist within a SINGLE paragraph/line only
+- DO NOT include text that spans across multiple paragraphs (NO newline characters in your selected text)
+- Each line in the document is often a separate paragraph - select text from ONE line only
+- Example WRONG: "Budget Summary: Base Fee: $1,150,000\\nPer-patient unit rate: $7,000" (spans 2 lines)
+- Example CORRECT: "Budget Summary (Proposed): Base Fee: $1,150,000; Per-Patient Fee: $9,800; Milestones: FPI 2025‑10‑20; IA 2026‑03‑01; DB Lock 2026‑08‑15." (single line)
+- Example CORRECT: "Publication Review Period: 120 days." (single line)
+
 YOUR APPROACH:
 1. **Read each analysis instruction carefully**
 2. **Look ONLY in the main document content** for relevant text to modify
@@ -480,43 +489,72 @@ If no exact substantial text matches can be found, return: []
 """
 
     messages = [{"role": "user", "content": prompt}]
-    
-    try:
-        content = get_chat_response(messages, temperature=0.0, seed=42, response_format={"type": "json_object"})
-        if not content:
-            print("❌ LLM returned empty content for intelligent suggestions")
-            return []
-        
-        print("✅ Intelligent LLM response received")
-        print(f"📊 Response length: {len(content)} characters")
-        
-        # Parse the response
-        edits = _parse_llm_response(content)
-        print(f"🎯 Generated {len(edits)} intelligent suggestions")
-        
-        # Enhanced debugging: Show all suggestions before validation
-        print("\n" + "="*80)
-        print("📋 DETAILED LLM SUGGESTIONS ANALYSIS")
-        print("="*80)
-        for i, edit in enumerate(edits, 1):
-            print(f"\n📝 SUGGESTION {i}:")
-            print(f"   Context: {edit.get('contextual_old_text', 'N/A')[:100]}...")
-            print(f"   Old Text: '{edit.get('specific_old_text', 'N/A')}'")
-            print(f"   New Text: '{edit.get('specific_new_text', 'N/A')[:100]}{'...' if len(str(edit.get('specific_new_text', ''))) > 100 else ''}'")
-            print(f"   Reason: {edit.get('reason_for_change', 'N/A')}")
-        print("="*80)
-        
-        validated_edits = _validate_edits(edits)
-        
-        if len(validated_edits) != len(edits):
-            print(f"⚠️  VALIDATION: {len(edits)} suggestions → {len(validated_edits)} valid (dropped {len(edits) - len(validated_edits)})")
-        
-        return validated_edits
-        
-    except Exception as e:
-        print(f"❌ Error in intelligent LLM processing: {e}")
-        print("🔄 Falling back to original approach...")
-        return _get_original_llm_suggestions(document_text, user_instructions, filename)
+
+    # GPT-5-nano retry logic - handles non-deterministic empty responses
+    MAX_RETRIES = 3
+    RETRY_DELAY = 1.5  # seconds
+
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            if attempt > 1:
+                print(f"🔄 Retry attempt {attempt}/{MAX_RETRIES} (GPT-5-nano returned empty response)")
+                time.sleep(RETRY_DELAY)
+
+            content = get_chat_response(messages, temperature=0.0, seed=42, response_format={"type": "json_object"})
+            if not content:
+                print(f"❌ LLM returned empty content (attempt {attempt}/{MAX_RETRIES})")
+                if attempt < MAX_RETRIES:
+                    continue
+                return []
+
+            print("✅ Intelligent LLM response received")
+            print(f"📊 Response length: {len(content)} characters")
+
+            # Parse the response
+            edits = _parse_llm_response(content)
+            print(f"🎯 Generated {len(edits)} intelligent suggestions")
+
+            # Retry if LLM returned empty suggestions (likely a {} response)
+            if len(edits) == 0:
+                print(f"⚠️  LLM generated 0 suggestions (attempt {attempt}/{MAX_RETRIES})")
+                if attempt < MAX_RETRIES:
+                    continue  # Retry
+                # On last attempt, fall through to return empty
+
+            # Enhanced debugging: Show all suggestions before validation
+            if len(edits) > 0:
+                print("\n" + "="*80)
+                print("📋 DETAILED LLM SUGGESTIONS ANALYSIS")
+                print("="*80)
+                for i, edit in enumerate(edits, 1):
+                    print(f"\n📝 SUGGESTION {i}:")
+                    print(f"   Context: {edit.get('contextual_old_text', 'N/A')[:100]}...")
+                    print(f"   Old Text: '{edit.get('specific_old_text', 'N/A')}'")
+                    print(f"   New Text: '{edit.get('specific_new_text', 'N/A')[:100]}{'...' if len(str(edit.get('specific_new_text', ''))) > 100 else ''}'")
+                    print(f"   Reason: {edit.get('reason_for_change', 'N/A')}")
+                print("="*80)
+
+            validated_edits = _validate_edits(edits)
+
+            if len(validated_edits) != len(edits):
+                print(f"⚠️  VALIDATION: {len(edits)} suggestions → {len(validated_edits)} valid (dropped {len(edits) - len(validated_edits)})")
+
+            # Success - return results (even if 0 after MAX_RETRIES)
+            if len(validated_edits) > 0 or attempt == MAX_RETRIES:
+                return validated_edits
+
+            # If we got 0 valid edits but haven't exhausted retries, try again
+            print(f"⚠️  No valid edits after validation (attempt {attempt}/{MAX_RETRIES})")
+
+        except Exception as e:
+            print(f"❌ Error in intelligent LLM processing (attempt {attempt}/{MAX_RETRIES}): {e}")
+            if attempt == MAX_RETRIES:
+                print("🔄 Exhausted retries, falling back to original approach...")
+                return _get_original_llm_suggestions(document_text, user_instructions, filename)
+            continue
+
+    # Fallback if retries exhausted
+    return []
 
 def _validate_edits(edits: List[Dict]) -> List[Dict]:
     """
@@ -574,6 +612,13 @@ def _get_original_llm_suggestions(document_text: str, user_instructions: str, fi
 Your goal is to identify the exact text to be replaced (`specific_old_text`), provide enough surrounding text for unique identification in the document (`contextual_old_text`), the new text (`specific_new_text`), and a reason for the change.
 **CRITICAL: The user's instructions contain MULTIPLE separate requirements. You are REQUIRED to generate MULTIPLE separate edits - one for each requirement. Do NOT combine requirements into a single edit. Do NOT generate only one edit when multiple are requested. You MUST provide separate JSON objects for EACH requirement listed.**
 User instructions for changes: {user_instructions}
+**CRITICAL PARAGRAPH BOUNDARY RULE:**
+* The `specific_old_text` and `contextual_old_text` MUST exist within a SINGLE paragraph only
+* DO NOT include text that spans across multiple paragraphs (no newline characters \\n within your selected text)
+* Each line in the document is often a separate paragraph - select text from one line only
+* If a change requires context from multiple lines, use ONLY the specific line that contains the text to change
+* Example WRONG: "Budget Summary: Base Fee: $1,150,000\\nPer-patient unit rate: $7,000" (spans 2 paragraphs)
+* Example CORRECT: "Publication Review Period: 120 days." (single paragraph)
 **Critical Instructions for Defining `specific_old_text`:**
 1.  **Target Complete Semantic Units:**
     * You *must* ensure `specific_old_text` represents the entire, complete semantic unit in the document that needs changing.
