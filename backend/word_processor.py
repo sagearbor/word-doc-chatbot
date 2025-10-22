@@ -11,6 +11,7 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from typing import List, Dict, Tuple, Optional, Any
 from difflib import SequenceMatcher
+from dataclasses import dataclass
 
 # --- Global Configuration Flags ---
 DEBUG_MODE = False
@@ -25,6 +26,36 @@ FUZZY_MATCHING_THRESHOLD = 0.85  # 85% similarity required for fuzzy match
 ERROR_LOG_FILENAME_BASE = "change_log"
 HIGHLIGHT_COLOR_AMBIGUOUS_SKIPPED = "orange"
 ALLOWED_POST_BOUNDARY_PUNCTUATION = {',', ';', '.', ':', '!', '?', ')', ']', '}', '"', "'"}
+
+# --- Data Structures ---
+@dataclass
+class TrackedChange:
+    """Represents a tracked change extracted from a document"""
+    change_type: str  # "insertion", "deletion", or "substitution"
+    old_text: str  # Text that was deleted (empty for pure insertion)
+    new_text: str  # Text that was inserted (empty for pure deletion)
+    author: str
+    date: str
+    paragraph_index: int
+    context_before: str = ""  # Text before the change for context
+    context_after: str = ""   # Text after the change for context
+
+    def to_edit_dict(self) -> Dict[str, str]:
+        """Convert tracked change to edit format expected by process_document_with_edits"""
+        # For substitutions (delete + insert), we have both old and new text
+        # For pure insertions, old_text is empty
+        # For pure deletions, new_text is empty
+
+        # Get context for better matching
+        contextual_old = f"{self.context_before}{self.old_text}{self.context_after}".strip()
+        contextual_new = f"{self.context_before}{self.new_text}{self.context_after}".strip()
+
+        return {
+            "contextual_old_text": contextual_old if contextual_old else self.old_text,
+            "specific_old_text": self.old_text,
+            "specific_new_text": self.new_text,
+            "reason_for_change": f"Based on tracked change by {self.author} in fallback document{f' (dated {self.date})' if self.date else ''}"
+        }
 
 # --- Fuzzy Matching Functions ---
 
@@ -254,6 +285,178 @@ def extract_tracked_changes_as_text(input_docx_path: str) -> str:
     if not changes_found_in_doc:
         return "No tracked insertions or deletions were found in this document."
     return "\n".join(changes_summary_lines)
+
+def extract_tracked_changes_structured(input_docx_path: str, context_chars: int = 50) -> List[TrackedChange]:
+    """
+    Extracts tracked changes from a DOCX file as structured data.
+
+    This function processes a Word document with tracked changes and returns a list of
+    TrackedChange objects that can be used to apply similar changes to another document.
+
+    Args:
+        input_docx_path: Path to the input DOCX file with tracked changes
+        context_chars: Number of characters before/after to include as context
+
+    Returns:
+        List of TrackedChange objects representing all tracked changes in the document
+    """
+    try:
+        doc = Document(input_docx_path)
+    except Exception as e:
+        print(f"Error opening Word document '{input_docx_path}' for structured change extraction: {e}")
+        return []
+
+    tracked_changes = []
+
+    for para_idx, paragraph in enumerate(doc.paragraphs):
+        # Build a map of the paragraph content to get context
+        para_text = paragraph.text
+
+        # Track position in paragraph for context extraction
+        current_pos = 0
+        pending_deletion = None  # Store deletion to pair with following insertion
+
+        for p_child_element in paragraph._p:
+            if p_child_element.tag == qn("w:ins"):
+                # Extraction (insertion)
+                inserted_text_parts = []
+                author = p_child_element.get(qn('w:author'), "Unknown Author")
+                date_str = p_child_element.get(qn('w:date'), "")
+                if date_str and 'T' in date_str:
+                    date_str = date_str.split('T')[0]
+
+                for r_in_ins in p_child_element.findall(qn('w:r')):
+                    for t_in_ins in r_in_ins.findall(qn('w:t')):
+                        if t_in_ins.text:
+                            inserted_text_parts.append(t_in_ins.text)
+
+                if inserted_text_parts:
+                    new_text = ''.join(inserted_text_parts)
+
+                    # Get context
+                    context_before = para_text[max(0, current_pos - context_chars):current_pos]
+                    context_after = para_text[current_pos:current_pos + context_chars]
+
+                    # Check if there's a pending deletion (substitution case)
+                    if pending_deletion:
+                        # This is a substitution (delete + insert)
+                        change = TrackedChange(
+                            change_type="substitution",
+                            old_text=pending_deletion['text'],
+                            new_text=new_text,
+                            author=author,
+                            date=date_str,
+                            paragraph_index=para_idx,
+                            context_before=context_before,
+                            context_after=context_after
+                        )
+                        pending_deletion = None  # Clear the pending deletion
+                    else:
+                        # Pure insertion
+                        change = TrackedChange(
+                            change_type="insertion",
+                            old_text="",
+                            new_text=new_text,
+                            author=author,
+                            date=date_str,
+                            paragraph_index=para_idx,
+                            context_before=context_before,
+                            context_after=context_after
+                        )
+
+                    tracked_changes.append(change)
+                    current_pos += len(new_text)
+
+            elif p_child_element.tag == qn("w:del"):
+                # Deletion
+                deleted_text_parts = []
+                author = p_child_element.get(qn('w:author'), "Unknown Author")
+                date_str = p_child_element.get(qn('w:date'), "")
+                if date_str and 'T' in date_str:
+                    date_str = date_str.split('T')[0]
+
+                for r_in_del in p_child_element.findall(qn('w:r')):
+                    for del_text_node in r_in_del.findall(qn('w:delText')):
+                        if del_text_node.text:
+                            deleted_text_parts.append(del_text_node.text)
+
+                if deleted_text_parts:
+                    deleted_text = ''.join(deleted_text_parts)
+
+                    # Store this deletion in case the next element is an insertion (substitution)
+                    pending_deletion = {
+                        'text': deleted_text,
+                        'author': author,
+                        'date': date_str,
+                        'pos': current_pos
+                    }
+
+            else:
+                # Regular text - add any pending deletion as a pure deletion
+                if pending_deletion:
+                    context_before = para_text[max(0, pending_deletion['pos'] - context_chars):pending_deletion['pos']]
+                    context_after = para_text[pending_deletion['pos']:pending_deletion['pos'] + context_chars]
+
+                    change = TrackedChange(
+                        change_type="deletion",
+                        old_text=pending_deletion['text'],
+                        new_text="",
+                        author=pending_deletion['author'],
+                        date=pending_deletion['date'],
+                        paragraph_index=para_idx,
+                        context_before=context_before,
+                        context_after=context_after
+                    )
+                    tracked_changes.append(change)
+                    pending_deletion = None
+
+                # Update position for regular text
+                if hasattr(p_child_element, 'text') and p_child_element.text:
+                    current_pos += len(p_child_element.text)
+
+        # Handle any remaining pending deletion at end of paragraph
+        if pending_deletion:
+            context_before = para_text[max(0, pending_deletion['pos'] - context_chars):pending_deletion['pos']]
+            context_after = para_text[pending_deletion['pos']:pending_deletion['pos'] + context_chars]
+
+            change = TrackedChange(
+                change_type="deletion",
+                old_text=pending_deletion['text'],
+                new_text="",
+                author=pending_deletion['author'],
+                date=pending_deletion['date'],
+                paragraph_index=para_idx,
+                context_before=context_before,
+                context_after=context_after
+            )
+            tracked_changes.append(change)
+
+    return tracked_changes
+
+def convert_tracked_changes_to_edits(tracked_changes: List[TrackedChange]) -> List[Dict[str, str]]:
+    """
+    Convert a list of TrackedChange objects to edit dictionaries for processing.
+
+    This function takes tracked changes extracted from a fallback document and converts
+    them to the format expected by process_document_with_edits().
+
+    Args:
+        tracked_changes: List of TrackedChange objects
+
+    Returns:
+        List of edit dictionaries with contextual_old_text, specific_old_text,
+        specific_new_text, and reason_for_change fields
+    """
+    edits = []
+
+    for change in tracked_changes:
+        # Skip pure deletions with no new text (those would just delete content)
+        # Only process changes that have new text or are substitutions
+        if change.new_text or change.old_text:
+            edit_dict = change.to_edit_dict()
+            edits.append(edit_dict)
+
+    return edits
 
 def get_document_xml_raw_text(docx_path: str) -> str:
     """

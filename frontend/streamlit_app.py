@@ -44,8 +44,11 @@ with st.sidebar:
     # Fallback document option
     st.markdown("---")
     st.subheader("📋 Fallback Document (Optional)")
-    use_fallback = st.checkbox("Use fallback document for guidance", value=st.session_state.use_fallback_mode, 
-                              help="Upload a second document that contains guidance, requirements, or rules for how the main document should be edited.")
+    use_fallback = st.checkbox("Use fallback document for guidance", value=st.session_state.use_fallback_mode,
+                              help="Upload a second document that contains:\n"
+                                   "• Tracked changes to apply to the main document (preferred), OR\n"
+                                   "• Requirements/guidance text for AI to interpret\n\n"
+                                   "If the fallback document has tracked changes, they will be extracted and applied directly!")
     
     fallback_file = None
     if use_fallback:
@@ -54,6 +57,12 @@ with st.sidebar:
         
         if fallback_file:
             st.info(f"📄 Fallback document: {fallback_file.name}")
+            st.markdown("""
+            **How fallback documents work:**
+            - ✨ **With tracked changes**: Changes are extracted and applied directly to your main document
+            - 📝 **With requirements text**: AI interprets the requirements and generates appropriate edits
+            - 🔄 **Mixed content**: Both tracked changes and requirements can be used together
+            """)
             
             # Option to analyze fallback document
             if st.button("🔍 Analyze Fallback Requirements", disabled=st.session_state.processing, key="analyze_fallback_button"):
