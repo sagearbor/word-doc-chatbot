@@ -26,7 +26,10 @@ from .word_processor import (
     DEFAULT_AUTHOR_NAME,
     _build_visible_text_map,         # Used by extract_text_for_llm
     extract_tracked_changes_as_text, # For Approach 1
-    get_document_xml_raw_text        # For Approach 2
+    get_document_xml_raw_text,       # For Approach 2
+    extract_tracked_changes_structured,  # Extract tracked changes from fallback
+    convert_tracked_changes_to_edits,    # Convert to edit format
+    TrackedChange                         # Tracked change dataclass
 )
 from .legal_document_processor import (
     parse_legal_document,
@@ -517,76 +520,114 @@ async def process_document_with_fallback(
         
         # Extract text for LLM processing
         doc_text_for_llm = extract_text_for_llm(input_path)
-        
-        # TEMPORARILY DISABLE Phase 2.2 - it's not working properly
-        # Force use of working Phase 2.1 Enhanced Instructions
-        force_use_phase21 = True
-        
-        # Use Phase 2.2 Advanced Instruction Merging (or force Phase 2.1)
-        try:
-            if force_use_phase21:
-                print(f"[PID:{os.getpid()}] FORCING Phase 2.1 Enhanced Instructions (Phase 2.2 disabled for debugging)...")
-                raise Exception("Phase 2.2 disabled - using Phase 2.1")
-            
-            print(f"[PID:{os.getpid()}] Attempting Phase 2.2 Advanced Instruction Merging...")
-            
-            # Convert simple merge strategy to Phase 2.2 strategy
-            phase22_strategy_map = {
-                "append": "intelligent_merge",
-                "prepend": "user_priority", 
-                "priority": "fallback_priority"
-            }
-            phase22_strategy = phase22_strategy_map.get(merge_strategy, "intelligent_merge")
-            
-            # Get LLM suggestions using Phase 2.2 advanced merging
-            edits = get_llm_suggestions_with_fallback(
-                doc_text_for_llm, 
-                user_instructions, 
-                input_filename, 
-                fallback_path
-            )
-            
-            # For debug mode, capture additional fallback processing info
+
+        # NEW FEATURE: Check if fallback document has tracked changes
+        # If it does, extract them directly and skip LLM processing
+        print(f"[PID:{os.getpid()}] Checking fallback document for tracked changes...")
+        tracked_changes = extract_tracked_changes_structured(fallback_path)
+
+        using_tracked_changes = False
+        if tracked_changes:
+            print(f"[PID:{os.getpid()}] Found {len(tracked_changes)} tracked changes in fallback document!")
+            print(f"[PID:{os.getpid()}] Using tracked changes directly (bypassing LLM)")
+
+            # Convert tracked changes to edit format
+            edits = convert_tracked_changes_to_edits(tracked_changes)
+            using_tracked_changes = True
+
+            # Store debug info about tracked changes
             if debug_mode or extended_debug_mode:
-                try:
-                    from .legal_document_processor import extract_fallback_requirements
-                    fallback_requirements = extract_fallback_requirements(fallback_path)
-                    debug_fallback_info = {
-                        "fallback_requirements_count": len(fallback_requirements) if fallback_requirements else 0,
-                        "requirement_types": list(set([req.requirement_type for req in fallback_requirements])) if fallback_requirements else [],
-                        "sample_requirements": [req.text[:100] + "..." if len(req.text) > 100 else req.text for req in fallback_requirements[:3]] if fallback_requirements else []
-                    }
-                except Exception as e:
-                    debug_fallback_info = {"error": f"Could not analyze fallback requirements: {str(e)}"}
-            
-            print(f"[PID:{os.getpid()}] Phase 2.2 Advanced Merging completed successfully")
-            
-        except Exception as e:
-            print(f"[PID:{os.getpid()}] Phase 2.2 Advanced Merging failed: {e}")
-            print(f"[PID:{os.getpid()}] Falling back to Phase 2.1 enhanced instructions...")
-            
-            # Fallback to Phase 2.1 method - use our FIXED function directly
-            print(f"[PID:{os.getpid()}] Using fixed generate_instructions_from_fallback function...")
-            fallback_instructions = generate_instructions_from_fallback(
-                fallback_path, 
-                context=f"Processing {input_filename} with fallback requirements"
-            )
-            print(f"[PID:{os.getpid()}] Generated {len(fallback_instructions)} characters of fallback instructions")
-            
-            # Merge instructions based on strategy
-            if merge_strategy == "append":
-                combined_instructions = f"{fallback_instructions}\n\nAdditional User Instructions:\n{user_instructions}" if user_instructions else fallback_instructions
-            elif merge_strategy == "prepend":
-                combined_instructions = f"{user_instructions}\n\nFallback Requirements:\n{fallback_instructions}" if user_instructions else fallback_instructions
-            else:  # priority - fallback takes precedence
-                combined_instructions = fallback_instructions
-                if user_instructions:
-                    combined_instructions += f"\n\nNote: Apply user instructions only if they do not conflict with above requirements:\n{user_instructions}"
-            
-            print(f"[PID:{os.getpid()}] Combined instructions length: {len(combined_instructions)} characters")
-            
-            # Get LLM suggestions using combined instructions (Phase 2.1 fallback)
-            edits = get_llm_suggestions(doc_text_for_llm, combined_instructions, input_filename)
+                debug_fallback_info = {
+                    "method": "tracked_changes_extraction",
+                    "tracked_changes_count": len(tracked_changes),
+                    "change_types": {
+                        "insertions": len([c for c in tracked_changes if c.change_type == "insertion"]),
+                        "deletions": len([c for c in tracked_changes if c.change_type == "deletion"]),
+                        "substitutions": len([c for c in tracked_changes if c.change_type == "substitution"])
+                    },
+                    "sample_changes": [
+                        {
+                            "type": c.change_type,
+                            "old": c.old_text[:50] + "..." if len(c.old_text) > 50 else c.old_text,
+                            "new": c.new_text[:50] + "..." if len(c.new_text) > 50 else c.new_text,
+                            "author": c.author
+                        } for c in tracked_changes[:3]
+                    ]
+                }
+        else:
+            print(f"[PID:{os.getpid()}] No tracked changes found in fallback document, using LLM-based approach")
+
+        # Only use LLM processing if no tracked changes were found
+        if not using_tracked_changes:
+            # TEMPORARILY DISABLE Phase 2.2 - it's not working properly
+            # Force use of working Phase 2.1 Enhanced Instructions
+            force_use_phase21 = True
+
+            # Use Phase 2.2 Advanced Instruction Merging (or force Phase 2.1)
+            try:
+                if force_use_phase21:
+                    print(f"[PID:{os.getpid()}] FORCING Phase 2.1 Enhanced Instructions (Phase 2.2 disabled for debugging)...")
+                    raise Exception("Phase 2.2 disabled - using Phase 2.1")
+
+                print(f"[PID:{os.getpid()}] Attempting Phase 2.2 Advanced Instruction Merging...")
+
+                # Convert simple merge strategy to Phase 2.2 strategy
+                phase22_strategy_map = {
+                    "append": "intelligent_merge",
+                    "prepend": "user_priority",
+                    "priority": "fallback_priority"
+                }
+                phase22_strategy = phase22_strategy_map.get(merge_strategy, "intelligent_merge")
+
+                # Get LLM suggestions using Phase 2.2 advanced merging
+                edits = get_llm_suggestions_with_fallback(
+                    doc_text_for_llm,
+                    user_instructions,
+                    input_filename,
+                    fallback_path
+                )
+
+                # For debug mode, capture additional fallback processing info
+                if debug_mode or extended_debug_mode:
+                    try:
+                        from .legal_document_processor import extract_fallback_requirements
+                        fallback_requirements = extract_fallback_requirements(fallback_path)
+                        debug_fallback_info = {
+                            "fallback_requirements_count": len(fallback_requirements) if fallback_requirements else 0,
+                            "requirement_types": list(set([req.requirement_type for req in fallback_requirements])) if fallback_requirements else [],
+                            "sample_requirements": [req.text[:100] + "..." if len(req.text) > 100 else req.text for req in fallback_requirements[:3]] if fallback_requirements else []
+                        }
+                    except Exception as e:
+                        debug_fallback_info = {"error": f"Could not analyze fallback requirements: {str(e)}"}
+
+                print(f"[PID:{os.getpid()}] Phase 2.2 Advanced Merging completed successfully")
+
+            except Exception as e:
+                print(f"[PID:{os.getpid()}] Phase 2.2 Advanced Merging failed: {e}")
+                print(f"[PID:{os.getpid()}] Falling back to Phase 2.1 enhanced instructions...")
+
+                # Fallback to Phase 2.1 method - use our FIXED function directly
+                print(f"[PID:{os.getpid()}] Using fixed generate_instructions_from_fallback function...")
+                fallback_instructions = generate_instructions_from_fallback(
+                    fallback_path,
+                    context=f"Processing {input_filename} with fallback requirements"
+                )
+                print(f"[PID:{os.getpid()}] Generated {len(fallback_instructions)} characters of fallback instructions")
+
+                # Merge instructions based on strategy
+                if merge_strategy == "append":
+                    combined_instructions = f"{fallback_instructions}\n\nAdditional User Instructions:\n{user_instructions}" if user_instructions else fallback_instructions
+                elif merge_strategy == "prepend":
+                    combined_instructions = f"{user_instructions}\n\nFallback Requirements:\n{fallback_instructions}" if user_instructions else fallback_instructions
+                else:  # priority - fallback takes precedence
+                    combined_instructions = fallback_instructions
+                    if user_instructions:
+                        combined_instructions += f"\n\nNote: Apply user instructions only if they do not conflict with above requirements:\n{user_instructions}"
+
+                print(f"[PID:{os.getpid()}] Combined instructions length: {len(combined_instructions)} characters")
+
+                # Get LLM suggestions using combined instructions (Phase 2.1 fallback)
+                edits = get_llm_suggestions(doc_text_for_llm, combined_instructions, input_filename)
         
         if edits is None:
             raise HTTPException(status_code=500, detail="LLM failed to generate suggestions from fallback document.")
@@ -636,12 +677,14 @@ async def process_document_with_fallback(
         
         # Generate status message
         total_suggested_edits = len(edits)
+        method_description = "from tracked changes" if using_tracked_changes else "based on fallback document"
+
         if total_suggested_edits == 0:
-            status_message = "Processing complete. No changes suggested based on fallback document."
+            status_message = f"Processing complete. No changes suggested {method_description}."
         elif processed_edits_count == total_suggested_edits:
-            status_message = f"Processing complete. All {processed_edits_count} fallback-based changes were applied."
+            status_message = f"Processing complete. All {processed_edits_count} changes {method_description} were applied."
         else:
-            status_message = f"Processing complete. {processed_edits_count} out of {total_suggested_edits} fallback-based changes were applied."
+            status_message = f"Processing complete. {processed_edits_count} out of {total_suggested_edits} changes {method_description} were applied."
         
         # Add debug information for troubleshooting
         debug_info = {}
