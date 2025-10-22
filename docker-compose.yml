@@ -1,0 +1,148 @@
+# Docker Compose configuration for Word Document Chatbot
+#
+# This configuration supports two deployment scenarios:
+# 1. Path-based deployment (POC/demo) with NGINX helper
+# 2. Root deployment (production) without NGINX helper
+#
+# See DOCKER_DEPLOYMENT.md for detailed instructions
+
+services:
+  # =============================================================================
+  # Backend Service - FastAPI Application
+  # =============================================================================
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: backend
+    container_name: word-doc-chatbot-backend
+    restart: unless-stopped
+    environment:
+      # AI Provider Configuration (set in .env file)
+      - AI_PROVIDER=${AI_PROVIDER:-openai}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - AZURE_OPENAI_API_KEY=${AZURE_OPENAI_API_KEY}
+      - AZURE_OPENAI_ENDPOINT=${AZURE_OPENAI_ENDPOINT}
+      - AZURE_OPENAI_API_VERSION=${AZURE_OPENAI_API_VERSION:-2024-02-15-preview}
+      - AZURE_OPENAI_DEPLOYMENT=${AZURE_OPENAI_DEPLOYMENT}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+
+      # Application Settings
+      - ENVIRONMENT=${ENVIRONMENT:-development}
+      - DEBUG=${DEBUG:-false}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    env_file:
+      - backend/.env
+    ports:
+      # Only expose to localhost - nginx-helper or main NGINX will proxy
+      - "127.0.0.1:8004:8000"
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    volumes:
+      # Mount for persistent temp files if needed
+      - backend-temp:/app/temp
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # =============================================================================
+  # Frontend Service - Streamlit Application
+  # =============================================================================
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: frontend
+    container_name: word-doc-chatbot-frontend
+    restart: unless-stopped
+    environment:
+      # Backend connection
+      - BACKEND_URL=http://backend:8000
+
+      # Streamlit server configuration
+      - STREAMLIT_PORT=8501
+      - SERVER_ADDRESS=0.0.0.0
+
+      # NGINX / Reverse Proxy Configuration
+      # For path-based deployment: Set BASE_URL_PATH=/sageapp04
+      # For root deployment: Leave empty or set to /
+      - BASE_URL_PATH=${BASE_URL_PATH:-}
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - app-network
+    # Internal port only - accessed via nginx-helper
+    # For direct access (testing), uncomment the next line:
+    # ports:
+    #   - "8501:8501"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # =============================================================================
+  # NGINX Helper Service - Path-fixing Reverse Proxy
+  # =============================================================================
+  # This service is ONLY needed for path-based deployment (e.g., /sageapp04/)
+  # Comment out this entire service for root deployment
+  nginx-helper:
+    image: nginx:alpine
+    container_name: word-doc-chatbot-nginx-helper
+    restart: unless-stopped
+    ports:
+      # Expose to localhost only - main NGINX will proxy to this
+      - "127.0.0.1:3004:80"
+    volumes:
+      # Mount the nginx-helper configuration
+      # Note: Update nginx-helper.conf to use service name instead of localhost:
+      # Change proxy_pass to: http://frontend:8501
+      - ./nginx-helper-docker.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      frontend:
+        condition: service_healthy
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+# =============================================================================
+# Networks
+# =============================================================================
+networks:
+  app-network:
+    driver: bridge
+    name: word-doc-chatbot-network
+
+# =============================================================================
+# Volumes
+# =============================================================================
+volumes:
+  backend-temp:
+    driver: local
+    name: word-doc-chatbot-backend-temp
