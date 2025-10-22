@@ -435,11 +435,107 @@ docker logs -f nginx-helper
 
 ---
 
+## What If IT Removes the Trailing Slash?
+
+### The Change
+
+If IT modifies the main NGINX configuration from:
+```nginx
+location /sageapp04/  { proxy_pass http://127.0.0.1:3004/; }  # WITH trailing slash (strips prefix)
+```
+
+To:
+```nginx
+location /sageapp04  { proxy_pass http://127.0.0.1:3004; }  # NO trailing slash (keeps prefix)
+```
+
+### Required Changes
+
+**✅ GOOD NEWS**: If IT changes NGINX to keep the prefix, you can **REMOVE the nginx-helper entirely**! This simplifies your setup significantly.
+
+**Files to Update** (search for `TRAILING_SLASH_CHANGE` in code comments):
+
+**1. `docker-compose.yml`** - Comment out or remove nginx-helper service:
+```yaml
+# NGINX helper not needed if main NGINX keeps path prefix
+# nginx-helper:
+#   image: nginx:alpine
+#   ...
+```
+
+**2. `frontend/entrypoint.sh`** - No changes needed (already configured via BASE_URL_PATH)
+
+**3. Environment Variables** - Set BASE_URL_PATH:
+```bash
+export BASE_URL_PATH=/sageapp04
+```
+
+**4. Main NGINX** (managed by IT) - Both should work:
+```nginx
+# Recommended: Keep path prefix (no trailing slash on proxy_pass)
+location = /sageapp04  { return 301 /sageapp04/; }
+location /sageapp04  {
+    proxy_pass http://127.0.0.1:3004;  # No trailing slash = keeps /sageapp04
+
+    # WebSocket support
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+
+    # Standard headers
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+
+    proxy_buffering off;
+    proxy_read_timeout 86400;
+}
+```
+
+### Comparison Table
+
+| Main NGINX Config | nginx-helper Needed? | Direct Streamlit Access | Complexity |
+|-------------------|----------------------|------------------------|------------|
+| `proxy_pass http://...:3004/;` (WITH slash) | ✅ Yes | Via helper on :3004 | Higher |
+| `proxy_pass http://...:3004;` (NO slash) | ❌ No | Direct on :3004 | Lower |
+
+### Quick Migration Guide
+
+If IT changes to no-trailing-slash configuration:
+
+```bash
+# 1. Stop current deployment
+docker-compose down
+
+# 2. Update docker-compose.yml - comment out nginx-helper
+# See TRAILING_SLASH_CHANGE comment in file
+
+# 3. Expose frontend directly
+# In docker-compose.yml, add to frontend service:
+#   ports:
+#     - "127.0.0.1:3004:8501"
+
+# 4. Set environment variable
+export BASE_URL_PATH=/sageapp04
+
+# 5. Restart
+docker-compose up -d backend frontend
+
+# 6. Test
+curl http://localhost:3004/_stcore/health
+```
+
+**Result**: Simpler architecture without nginx-helper!
+
+---
+
 ## Additional Resources
 
 - [Streamlit Documentation - Reverse Proxy](https://docs.streamlit.io/knowledge-base/deploy/deploy-streamlit-using-nginx)
 - [NGINX Reverse Proxy Documentation](https://docs.nginx.com/nginx/admin-guide/web-server/reverse-proxy/)
 - [WebSocket Proxying with NGINX](https://nginx.org/en/docs/http/websocket.html)
+- [NGINX proxy_pass Trailing Slash Behavior](http://nginx.org/en/docs/http/ngx_http_proxy_module.html#proxy_pass)
 
 ---
 

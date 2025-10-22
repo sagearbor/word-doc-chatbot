@@ -101,6 +101,15 @@ services:
   # NGINX Helper Service - Path-fixing Reverse Proxy
   # =============================================================================
   # This service is ONLY needed for path-based deployment (e.g., /sageapp04/)
+  # when main NGINX strips the path prefix (uses trailing slash in proxy_pass)
+  #
+  # TRAILING_SLASH_CHANGE: If IT changes main NGINX from:
+  #   location /sageapp04/ { proxy_pass http://127.0.0.1:3004/; }  (strips prefix)
+  # To:
+  #   location /sageapp04 { proxy_pass http://127.0.0.1:3004; }    (keeps prefix)
+  # Then you can REMOVE this entire nginx-helper service and expose frontend directly!
+  # See NGINX_DEPLOYMENT_GUIDE.md section "What If IT Removes the Trailing Slash?"
+  #
   # Comment out this entire service for root deployment
   nginx-helper:
     image: nginx:alpine
