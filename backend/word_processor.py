@@ -894,7 +894,30 @@ def process_document_with_edits(
                 else:
                     log_debug(f"P{para_idx+1}: CONTEXT_AMBIGUOUS status but no occurrence data was returned by replacement function. Edit item: {edit_item}")
                     ambiguous_or_failed_changes_log.append({"paragraph_index":para_idx, "issue": "CONTEXT_AMBIGUOUS but no occurrence data returned from replace function.", "type": "Warning", **current_edit_details_for_log})
-            elif status not in ["INIT", "CONTEXT_NOT_FOUND", "REGEX_ERROR_IN_CONTEXT_SEARCH", "SPECIFIC_TEXT_NOT_IN_CONTEXT", "SKIPPED_INVALID_BOUNDARY", "XML_MAPPING_FAILED", "XML_REMOVAL_ERROR_NO_INDICES"]:
+            elif status == "CONTEXT_NOT_FOUND":
+                log_debug(f"P{para_idx+1}: Edit skipped - CONTEXT_NOT_FOUND for '{edit_item['specific_old_text']}'")
+                ambiguous_or_failed_changes_log.append({
+                    "paragraph_index": para_idx,
+                    "issue": "Context not found in paragraph text.",
+                    "type": "Skipped",
+                    **current_edit_details_for_log
+                })
+            elif status == "SPECIFIC_TEXT_NOT_IN_CONTEXT":
+                # Already logged in replace_text_in_paragraph_with_tracked_change
+                pass
+            elif status == "SKIPPED_INVALID_BOUNDARY":
+                # Already logged in replace_text_in_paragraph_with_tracked_change
+                pass
+            elif status == "XML_MAPPING_FAILED":
+                # Already logged in replace_text_in_paragraph_with_tracked_change
+                pass
+            elif status == "REGEX_ERROR_IN_CONTEXT_SEARCH":
+                # Already logged in replace_text_in_paragraph_with_tracked_change
+                pass
+            elif status == "XML_REMOVAL_ERROR_NO_INDICES":
+                # Should be logged elsewhere if needed
+                pass
+            elif status not in ["INIT"]:
                 info_msg = f"INFO: P{para_idx+1}: Edit for context '{edit_item['contextual_old_text'][:30]}...' specific '{edit_item['specific_old_text']}' resulted in status: {status}."
                 print(info_msg)
                 log_debug(info_msg)
