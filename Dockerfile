@@ -19,8 +19,10 @@ RUN apt-get update && apt-get install -y \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Create app user
-RUN groupadd -r appuser && useradd -r -g appuser appuser
+# Create app user with home directory
+RUN groupadd -r appuser && \
+    useradd -r -g appuser -m -d /home/appuser appuser && \
+    chown -R appuser:appuser /home/appuser
 
 # =============================================================================
 # Backend Stage
@@ -70,6 +72,9 @@ COPY .env.example .env
 # Make entrypoint executable
 RUN chmod +x ./frontend/entrypoint.sh
 
+# Set ownership of /app to appuser
+RUN chown -R appuser:appuser /app
+
 # Switch to non-root user
 USER appuser
 
@@ -84,7 +89,8 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
 ENV BACKEND_URL=http://backend:8000 \
     BASE_URL_PATH= \
     STREAMLIT_PORT=8501 \
-    SERVER_ADDRESS=0.0.0.0
+    SERVER_ADDRESS=0.0.0.0 \
+    STREAMLIT_CONFIG_DIR=/app/.streamlit
 
 # Run frontend using entrypoint script
 ENTRYPOINT ["./frontend/entrypoint.sh"]
