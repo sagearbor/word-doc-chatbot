@@ -59,6 +59,157 @@ docker compose build frontend
 # - Backend API: http://localhost:8004/docs
 ```
 
+## Specialized Agents
+
+This project has configured specialized agents in `.claude/agents/` that should be used proactively for specific tasks. **Always prefer using these agents over doing the work manually** as they provide systematic, tested approaches to common development activities.
+
+### When to Use Each Agent
+
+#### 1. **code-simplifier** - Repository Cleanup & Code Quality
+**Use for:**
+- Cleaning up repository structure and removing clutter
+- Removing duplicate code across modules
+- Identifying and removing orphaned/unused code
+- Simplifying overly complex functions
+- After completing features (cleanup before merge)
+- Before major releases
+
+**Example invocations:**
+```
+"Let's clean up the root directory - it's getting cluttered"
+→ Use code-simplifier agent to reorganize files systematically
+
+"I just finished the new feature, can you review it for cleanup?"
+→ Use code-simplifier agent to check for duplication and complexity
+
+"The repo feels messy, can you tidy it up?"
+→ Use code-simplifier agent for comprehensive cleanup
+```
+
+**Key features:**
+- Maintains `.code-simplifier-tracking.json` to track reviews
+- Always runs tests before/after changes
+- Reverts changes if tests fail
+- Provides detailed reports of all modifications
+
+#### 2. **tech-lead-developer** - Feature Implementation
+**Use for:**
+- Implementing new features or modules
+- Creating independent API endpoints
+- Building isolated UI components
+- Writing independent utility functions
+- **Can run multiple in parallel** for independent tasks
+
+**Example invocations:**
+```
+"I need three new API endpoints: /export/, /validate/, /stats/"
+→ Launch 3 tech-lead-developer agents in parallel
+
+"Create SvelteKit components for upload, analysis, and results"
+→ Launch multiple tech-lead-developer agents for each component
+
+"Implement the legal document processor module"
+→ Use tech-lead-developer agent for focused implementation
+```
+
+**Key features:**
+- Can work on branches and commit changes
+- Excels at parallel independent development
+- Follows project patterns in CLAUDE.md
+- Creates comprehensive implementations
+
+#### 3. **qc-test-maintainer** - Testing & Quality Assurance
+**Use for:**
+- Creating test suites after implementing features
+- Updating tests after code changes
+- Running comprehensive test verification
+- Adding tests for edge cases
+- Ensuring test coverage
+
+**Example invocations:**
+```
+"I just added /process-legal-document/ endpoint"
+→ Use qc-test-maintainer to create comprehensive tests
+
+"Run all tests to verify nothing broke"
+→ Use qc-test-maintainer to execute full test suite
+
+"The word processor was updated, ensure tests cover new behavior"
+→ Use qc-test-maintainer to update and verify tests
+```
+
+**Key features:**
+- Automatically identifies related test files
+- Runs tests and reports results
+- Creates missing test coverage
+- Updates tests when code changes
+
+#### 4. **ux-reviewer** - UI/UX Evaluation
+**Use for:**
+- Reviewing UI implementations for visual appeal
+- Checking cross-platform/mobile compatibility
+- Evaluating user experience and intuitiveness
+- Ensuring accessibility compliance
+- After implementing any user-facing features
+
+**Example invocations:**
+```
+"I've implemented the SvelteKit file upload component"
+→ Use ux-reviewer to evaluate UX and mobile-friendliness
+
+"Review the new dashboard layout for usability"
+→ Use ux-reviewer to assess design and accessibility
+
+"Check if the new button works well on mobile"
+→ Use ux-reviewer for cross-platform evaluation
+```
+
+**Key features:**
+- Evaluates without adding unnecessary code
+- Checks mobile/tablet/desktop compatibility
+- Verifies accessibility (WCAG compliance)
+- Provides actionable UX recommendations
+
+#### 5. **security-reviewer** - Security Audits
+**Use for:**
+- Reviewing file upload endpoints
+- Checking API key and secrets management
+- Auditing authentication/authorization
+- Reviewing Docker/deployment configurations
+- After implementing data handling features
+- Before production deployments
+
+**Example invocations:**
+```
+"I added a file upload endpoint for .docx files"
+→ Use security-reviewer to check for vulnerabilities
+
+"Updated environment variable handling for API keys"
+→ Use security-reviewer to audit secrets management
+
+"Here's the new Dockerfile for production"
+→ Use security-reviewer to check deployment security
+```
+
+**Key features:**
+- Identifies common vulnerabilities (XSS, injection, etc.)
+- Reviews secrets management
+- Checks Docker security (non-root users, exposed ports)
+- Provides remediation recommendations
+
+### Best Practices for Agent Usage
+
+1. **Proactive invocation**: Don't wait to be asked - use agents when appropriate tasks arise
+2. **Parallel execution**: Launch multiple `tech-lead-developer` agents for independent tasks
+3. **Sequential workflow**:
+   - Implement with `tech-lead-developer`
+   - Test with `qc-test-maintainer`
+   - Review UX with `ux-reviewer`
+   - Audit security with `security-reviewer`
+   - Clean up with `code-simplifier`
+4. **Trust agent outputs**: Agents are specialized and tested - their recommendations should be followed
+5. **Documentation**: Agents maintain their own tracking files (e.g., `.code-simplifier-tracking.json`)
+
 ### Testing
 ```bash
 # Run all tests
