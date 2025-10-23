@@ -1,6 +1,20 @@
-# NGINX Deployment Guide for Streamlit Applications
+# NGINX Deployment Guide
 
-This guide explains how to deploy Streamlit applications behind NGINX reverse proxy with path prefixes (e.g., `/sageapp04/`). This setup is required when hosting multiple applications on a single domain with different URL paths.
+> **IMPORTANT: SIMPLIFIED WITH SVELTEKIT!**
+> This application has been migrated from Streamlit to SvelteKit. The nginx-helper container is **NO LONGER NEEDED**.
+> SvelteKit's adapter-static handles base paths natively at build time, eliminating the need for path manipulation middleware.
+>
+> **Migration benefits:**
+> - Single Docker container (backend + frontend)
+> - No nginx-helper required
+> - Simpler architecture and easier maintenance
+> - Native base path support in SvelteKit
+>
+> See `SVELTEKIT_MIGRATION.md` for migration details.
+
+---
+
+This guide explains how to deploy the SvelteKit application behind NGINX reverse proxy with path prefixes (e.g., `/sageapp04/`). The setup is significantly simpler than the previous Streamlit-based deployment.
 
 ## Table of Contents
 - [Problem Overview](#problem-overview)
@@ -41,7 +55,38 @@ Streamlit uses WebSockets for real-time communication. When served at a path pre
 
 ## Solution Architecture
 
-We use a lightweight NGINX helper container to fix the path mismatch:
+### SvelteKit Deployment (Current - Simplified)
+
+With SvelteKit, the architecture is dramatically simplified:
+
+```
+Browser: https://aidemo.dcri.duke.edu/sageapp04/
+   ↓
+Main NGINX: Proxies to 127.0.0.1:8000 (with or without path stripping)
+   ↓
+FastAPI + SvelteKit (single container, port 8000):
+  - FastAPI backend serves API at /api/*
+  - FastAPI serves SvelteKit static files with correct base path
+  - SvelteKit built with base: '/sageapp04' (handles paths automatically)
+```
+
+**Key components:**
+1. **Main NGINX** (managed by IT) - Reverse proxy only
+2. **Single Docker container** - FastAPI serves both API and static frontend
+
+**Benefits:**
+- No nginx-helper container needed
+- No path manipulation middleware required
+- SvelteKit handles base paths at build time
+- Single container deployment
+- Simpler configuration and troubleshooting
+
+### Legacy Streamlit Deployment (Deprecated)
+
+<details>
+<summary>Click to expand legacy Streamlit architecture (for reference only)</summary>
+
+We used a lightweight NGINX helper container to fix the path mismatch:
 
 ```
 Browser: https://aidemo.dcri.duke.edu/sageapp04/
@@ -58,9 +103,105 @@ Streamlit (port 8501): Configured with --server.baseUrlPath=/sageapp04 → serve
 2. **NGINX Helper** (your control) - Restores path prefix
 3. **Streamlit app** (your app) - Configured with base URL path
 
+</details>
+
 ---
 
-## Step-by-Step Setup
+## Step-by-Step Setup (SvelteKit)
+
+### 1. Build the SvelteKit Application
+
+SvelteKit needs to be built with the correct base path:
+
+```bash
+# Set base path for the build
+cd frontend-new
+BASE_URL_PATH=/sageapp04 npm run build
+
+# This creates frontend-new/build/ with static files
+```
+
+The base path is configured in `svelte.config.js` and read from the `BASE_URL_PATH` environment variable.
+
+### 2. Build the Docker Container
+
+```bash
+# From project root
+docker build -f Dockerfile.sveltekit -t word-chatbot:sveltekit .
+
+# Run the container
+docker run -d \
+  -p 8000:8000 \
+  --env-file .env \
+  --name word-chatbot \
+  word-chatbot:sveltekit
+```
+
+The Dockerfile automatically:
+- Installs Node.js dependencies
+- Builds SvelteKit with correct base path from environment
+- Sets up FastAPI to serve both API and static files
+- Configures all paths correctly
+
+### 3. Configure NGINX (IT-Managed)
+
+The main NGINX configuration is simple - just proxy to the application:
+
+```nginx
+# Option 1: Without path stripping (recommended)
+location /sageapp04 {
+    proxy_pass http://127.0.0.1:8000;
+
+    # WebSocket support (if needed in future)
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+
+    # Standard reverse proxy headers
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+
+    # Timeouts
+    proxy_read_timeout 86400;
+    proxy_buffering off;
+}
+
+# Option 2: With path stripping (also works)
+location /sageapp04/ {
+    proxy_pass http://127.0.0.1:8000/;  # Trailing slash strips /sageapp04
+
+    # Same headers as above...
+}
+```
+
+**Note:** Both options work with SvelteKit! The application handles paths correctly either way.
+
+### 4. Set Environment Variables
+
+Create or update `.env` in project root:
+
+```bash
+# AI Provider Configuration
+CURRENT_AI_PROVIDER=azure_openai
+AZURE_OPENAI_API_KEY=your-key-here
+AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com/
+AZURE_OPENAI_DEFAULT_DEPLOYMENT_NAME=gpt-5-mini
+
+# Base path for reverse proxy deployment
+BASE_URL_PATH=/sageapp04
+
+# Backend URL for API calls (used by SvelteKit at build time)
+PUBLIC_BACKEND_URL=http://localhost:8000
+```
+
+---
+
+## Legacy Streamlit Setup (Deprecated)
+
+<details>
+<summary>Click to expand legacy Streamlit setup instructions (for reference only)</summary>
 
 ### 1. Create `.streamlit/config.toml`
 
@@ -202,7 +343,99 @@ SERVER_ADDRESS=0.0.0.0
 
 ---
 
-## Testing
+</details>
+
+## Testing (SvelteKit)
+
+### 1. Test Application Locally
+
+First, verify the application works standalone:
+
+```bash
+# Start the Docker container
+docker run -d -p 8000:8000 --env-file .env --name word-chatbot word-chatbot:sveltekit
+
+# Check health
+curl http://localhost:8000/health
+# Should return: {"status":"healthy"}
+
+# Access the application
+open http://localhost:8000
+# Or if using base path:
+open http://localhost:8000/sageapp04
+```
+
+**Expected:** Application loads correctly, can upload files and process documents
+
+### 2. Test with NGINX Proxy
+
+Set up local NGINX to test the reverse proxy configuration:
+
+```bash
+# Install NGINX (if not already installed)
+# Ubuntu/Debian: sudo apt-get install nginx
+# macOS: brew install nginx
+
+# Create test config
+sudo tee /etc/nginx/sites-available/word-chatbot-test <<EOF
+server {
+    listen 80;
+    server_name localhost;
+
+    location /sageapp04 {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_buffering off;
+        proxy_read_timeout 86400;
+    }
+}
+EOF
+
+# Enable the config
+sudo ln -s /etc/nginx/sites-available/word-chatbot-test /etc/nginx/sites-enabled/
+sudo nginx -t
+sudo systemctl reload nginx
+
+# Test
+open http://localhost/sageapp04
+```
+
+**Expected:** Application loads correctly through NGINX proxy
+
+### 3. Test Static Assets
+
+Verify static assets (CSS, JS) load correctly:
+
+```bash
+# Check bundle loads
+curl -I http://localhost:8000/sageapp04/_app/immutable/entry/start.*.js
+# Should return: 200 OK
+
+# Check CSS loads
+curl -I http://localhost:8000/sageapp04/_app/immutable/assets/*.css
+# Should return: 200 OK
+```
+
+### 4. Browser DevTools Check
+
+Open browser DevTools (F12) → Network tab:
+- All assets should return 200 OK
+- No 404 errors for CSS/JS files
+- Base paths should be correct in loaded URLs
+- Console should have no errors
+
+---
+
+## Legacy Streamlit Testing (Deprecated)
+
+<details>
+<summary>Click to expand legacy Streamlit testing instructions (for reference only)</summary>
 
 ### 1. Test Streamlit Standalone (Without NGINX Helper)
 
@@ -263,9 +496,172 @@ Open browser DevTools (F12) → Console tab
 - **No WebSocket errors**: ✅ Working correctly
 - **WebSocket connection failed**: ❌ Configuration issue
 
+</details>
+
 ---
 
-## Troubleshooting
+## Troubleshooting (SvelteKit)
+
+### Issue: 404 Not Found
+
+**Symptoms:**
+- Accessing the app returns 404
+- Static assets not loading
+
+**Solutions:**
+1. Verify BASE_URL_PATH is set correctly in .env
+2. Rebuild Docker image with correct base path: `docker build -f Dockerfile.sveltekit -t word-chatbot:sveltekit .`
+3. Check NGINX is proxying to correct port (8000)
+4. Verify container is running: `docker ps | grep word-chatbot`
+5. Check container logs: `docker logs word-chatbot`
+
+### Issue: CSS/JS Not Loading
+
+**Symptoms:**
+- App loads but has no styling
+- Browser console shows 404 errors for static assets
+
+**Solutions:**
+1. Verify SvelteKit was built with correct BASE_URL_PATH
+2. Check browser Network tab - assets should load from correct base path
+3. Rebuild frontend: `cd frontend-new && BASE_URL_PATH=/sageapp04 npm run build`
+4. Rebuild Docker image
+5. Ensure base path doesn't have trailing slash
+
+### Issue: API Calls Failing
+
+**Symptoms:**
+- App loads but file uploads fail
+- Document processing doesn't work
+
+**Solutions:**
+1. Check PUBLIC_BACKEND_URL in frontend-new/.env
+2. Verify FastAPI is running: `curl http://localhost:8000/health`
+3. Check CORS configuration in backend/main.py
+4. Verify API endpoints are accessible: `curl http://localhost:8000/docs`
+5. Check container logs for backend errors
+
+### Issue: Container Won't Start
+
+**Symptoms:**
+- Docker container exits immediately
+- `docker ps` doesn't show the container
+
+**Solutions:**
+1. Check logs: `docker logs word-chatbot`
+2. Verify .env file exists and has required variables
+3. Check for port conflicts: `lsof -i :8000`
+4. Verify Docker image built successfully
+5. Try running interactively: `docker run -it --env-file .env word-chatbot:sveltekit`
+
+---
+
+## Deployment Scenarios (SvelteKit)
+
+### Scenario 1: POC/Demo (Path Prefix - e.g., /sageapp04/)
+
+**Use case:** Multiple apps on shared domain: `https://demo.com/app1/`, `https://demo.com/app2/`
+
+**Configuration:**
+```bash
+# .env
+BASE_URL_PATH=/sageapp04
+CURRENT_AI_PROVIDER=azure_openai
+AZURE_OPENAI_API_KEY=your-key
+PUBLIC_BACKEND_URL=http://localhost:8000
+
+# Build and run
+docker build -f Dockerfile.sveltekit -t word-chatbot:sveltekit .
+docker run -d -p 8000:8000 --env-file .env --name word-chatbot word-chatbot:sveltekit
+```
+
+**Main NGINX config (managed by IT):**
+```nginx
+location = /sageapp04  { return 301 /sageapp04/; }
+location /sageapp04 {
+    proxy_pass http://127.0.0.1:8000;
+
+    # Standard headers
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+
+    proxy_buffering off;
+    proxy_read_timeout 86400;
+}
+```
+
+### Scenario 2: Production (Dedicated Domain - No Path Prefix)
+
+**Use case:** App has its own domain: `https://myapp.company.com/`
+
+**Configuration:**
+```bash
+# .env
+BASE_URL_PATH=  # Empty - no path prefix
+CURRENT_AI_PROVIDER=azure_openai
+AZURE_OPENAI_API_KEY=your-key
+PUBLIC_BACKEND_URL=http://localhost:8000
+
+# Build and run
+docker build -f Dockerfile.sveltekit -t word-chatbot:production .
+docker run -d -p 8000:8000 --env-file .env --restart unless-stopped word-chatbot:production
+```
+
+**Main NGINX config:**
+```nginx
+server {
+    listen 443 ssl;
+    server_name myapp.company.com;
+
+    location / {
+        proxy_pass http://127.0.0.1:8000;
+
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        proxy_buffering off;
+        proxy_read_timeout 86400;
+    }
+}
+```
+
+### Scenario 3: Azure Container Instances
+
+**Use case:** Cloud deployment on Azure
+
+**Configuration:**
+```bash
+# Build and push to Azure Container Registry
+az acr login --name yourregistry
+docker tag word-chatbot:sveltekit yourregistry.azurecr.io/word-chatbot:latest
+docker push yourregistry.azurecr.io/word-chatbot:latest
+
+# Deploy to Azure Container Instances
+az container create \
+  --resource-group your-rg \
+  --name word-chatbot \
+  --image yourregistry.azurecr.io/word-chatbot:latest \
+  --registry-login-server yourregistry.azurecr.io \
+  --registry-username $(az acr credential show -n yourregistry --query username -o tsv) \
+  --registry-password $(az acr credential show -n yourregistry --query passwords[0].value -o tsv) \
+  --dns-name-label word-chatbot \
+  --ports 8000 \
+  --environment-variables \
+    BASE_URL_PATH= \
+    CURRENT_AI_PROVIDER=azure_openai \
+    AZURE_OPENAI_API_KEY=your-key
+```
+
+---
+
+## Legacy Streamlit Troubleshooting (Deprecated)
+
+<details>
+<summary>Click to expand legacy Streamlit troubleshooting (for reference only)</summary>
 
 ### Issue: WebSocket Connection Failed
 
@@ -528,27 +924,81 @@ curl http://localhost:3004/_stcore/health
 
 **Result**: Simpler architecture without nginx-helper!
 
+</details>
+
+---
+
+## Quick Reference (SvelteKit)
+
+### Environment Variables
+- `BASE_URL_PATH` - URL path prefix (e.g., `/sageapp04` or empty for root)
+- `PUBLIC_BACKEND_URL` - Backend API URL (e.g., `http://localhost:8000`)
+- `CURRENT_AI_PROVIDER` - AI provider selection
+- Provider-specific API keys and endpoints
+
+### Key Commands
+```bash
+# Build Docker image
+docker build -f Dockerfile.sveltekit -t word-chatbot:sveltekit .
+
+# Run container
+docker run -d -p 8000:8000 --env-file .env word-chatbot:sveltekit
+
+# Check health
+curl http://localhost:8000/health
+
+# View logs
+docker logs -f word-chatbot
+
+# Stop container
+docker stop word-chatbot
+```
+
+### NGINX Configuration
+```nginx
+# Simple reverse proxy - no path manipulation needed
+location /sageapp04 {
+    proxy_pass http://127.0.0.1:8000;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_buffering off;
+    proxy_read_timeout 86400;
+}
+```
+
 ---
 
 ## Additional Resources
 
-- [Streamlit Documentation - Reverse Proxy](https://docs.streamlit.io/knowledge-base/deploy/deploy-streamlit-using-nginx)
+- [SvelteKit Documentation](https://kit.svelte.dev/docs)
+- [SvelteKit adapter-static](https://kit.svelte.dev/docs/adapter-static)
 - [NGINX Reverse Proxy Documentation](https://docs.nginx.com/nginx/admin-guide/web-server/reverse-proxy/)
-- [WebSocket Proxying with NGINX](https://nginx.org/en/docs/http/websocket.html)
-- [NGINX proxy_pass Trailing Slash Behavior](http://nginx.org/en/docs/http/ngx_http_proxy_module.html#proxy_pass)
+- [FastAPI Serving Static Files](https://fastapi.tiangolo.com/tutorial/static-files/)
+- [SVELTEKIT_MIGRATION.md](./SVELTEKIT_MIGRATION.md) - Migration details
 
 ---
 
 ## Summary
 
-**For path-based deployment (recommended for POC/demo):**
-1. ✅ Use NGINX helper container
-2. ✅ Set BASE_URL_PATH environment variable
-3. ✅ Use entrypoint.sh to start Streamlit with baseUrlPath
+### SvelteKit Deployment (Current)
 
-**For root deployment (recommended for production):**
-1. ✅ Set BASE_URL_PATH to empty
-2. ✅ No NGINX helper needed
-3. ✅ Direct NGINX → Streamlit proxy
+**For path-based deployment (POC/demo with /sageapp04):**
+1. Set `BASE_URL_PATH=/sageapp04` in .env
+2. Build Docker image (handles base path automatically)
+3. Run single container on port 8000
+4. Configure NGINX to proxy to container
+5. No nginx-helper needed!
 
-**Remember:** The key is ensuring Streamlit's baseUrlPath matches the external URL path that users see in their browser.
+**For root deployment (production with dedicated domain):**
+1. Set `BASE_URL_PATH=` (empty) in .env
+2. Build and run Docker image
+3. Configure NGINX to proxy to container
+4. Single container, simple configuration
+
+**Key advantage:** SvelteKit handles base paths natively at build time, eliminating the need for runtime path manipulation middleware.
+
+### Legacy Streamlit Deployment (Deprecated)
+
+See collapsed sections above for legacy Streamlit deployment information (for reference only).

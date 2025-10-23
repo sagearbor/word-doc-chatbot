@@ -96,3 +96,30 @@ azure-pipelines.yml
 nginx*.conf
 DEPLOYMENT*.md
 TROUBLESHOOTING*.md
+
+# Node.js (for frontend build)
+node_modules/
+.svelte-kit/
+.next/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Frontend build artifacts (will be copied explicitly)
+frontend-new/build/
+frontend-new/.svelte-kit/
+frontend-new/node_modules/
+
+# Archive directories
+archive/
+*-old/
+*.old
+
+# Test files
+tests/
+*.test.js
+*.test.ts
+*.spec.js
+*.spec.ts
+pytest.ini
+.pytest_cache/

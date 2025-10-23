@@ -9,6 +9,8 @@ import json
 
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException
 from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
 # docx.Document is used by extract_text_for_llm if that's kept, and by word_processor
 from docx import Document 
 
@@ -59,6 +61,17 @@ except ImportError as e:
     WORKFLOW_ORCHESTRATOR_AVAILABLE = False
 
 app = FastAPI(title="Word Document Processing API")
+
+# Add CORS middleware for development (allows SvelteKit dev server at localhost:5173)
+if os.getenv("ENVIRONMENT") == "development":
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["http://localhost:5173"],  # SvelteKit dev server
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+    print("CORS middleware enabled for development environment")
 
 # Ensure TEMP_DIR_ROOT is defined at the module level
 TEMP_DIR_ROOT = tempfile.mkdtemp(prefix="wordapp_root_")
@@ -1018,7 +1031,7 @@ async def set_llm_config(
         "instruction_method": instruction_method
     })
 
-@app.get("/")
+@app.get("/api/")
 async def root():
     endpoints = {
         "message": "Word Document Processing API with Phase 4.1 Legal Workflow Orchestrator",
@@ -1045,7 +1058,8 @@ async def root():
             ],
             "utility": [
                 "GET /download/{filename} - Download processed document",
-                "GET / - This help message"
+                "GET /health - Health check endpoint",
+                "GET /api/ - This help message"
             ]
         },
         "features": {
@@ -1057,3 +1071,31 @@ async def root():
         "workflow_orchestrator_available": WORKFLOW_ORCHESTRATOR_AVAILABLE
     }
     return endpoints
+
+@app.get("/health")
+async def health_check():
+    """Health check endpoint for monitoring and deployment verification"""
+    return {
+        "status": "healthy",
+        "version": "4.1.0",
+        "frontend": "sveltekit",
+        "workflow_orchestrator": WORKFLOW_ORCHESTRATOR_AVAILABLE
+    }
+
+# Serve SvelteKit static files (must be AFTER all API routes)
+# This allows the single-container deployment to serve the built frontend
+if os.path.exists("static"):
+    app.mount("/", StaticFiles(directory="static", html=True), name="static")
+    print("Static file serving enabled for SvelteKit frontend at /static")
+
+@app.get("/{full_path:path}")
+async def serve_spa(full_path: str):
+    """
+    SPA fallback route for client-side routing.
+    Serves index.html for all non-API routes to support SvelteKit navigation.
+    This must be the LAST route defined.
+    """
+    static_path = "static/index.html"
+    if os.path.exists(static_path):
+        return FileResponse(static_path)
+    raise HTTPException(status_code=404, detail="Not found")

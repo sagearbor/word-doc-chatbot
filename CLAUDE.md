@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a Word Document Tracked Changes Chatbot that allows users to upload DOCX files and apply AI-suggested edits with tracked changes. The system consists of a FastAPI backend and a Streamlit frontend, supporting multiple AI providers (OpenAI, Azure OpenAI, Anthropic, Google) via LiteLLM.
+This is a Word Document Tracked Changes Chatbot that allows users to upload DOCX files and apply AI-suggested edits with tracked changes. The system consists of a FastAPI backend and a SvelteKit frontend, supporting multiple AI providers (OpenAI, Azure OpenAI, Anthropic, Google) via LiteLLM. The SvelteKit frontend provides a modern, high-performance user interface with TypeScript, mobile support, and sub-second load times.
 
 ## Key Commands
 
@@ -27,37 +27,75 @@ cp .env.example .env
 
 #### Local Development
 ```bash
+# Install Python dependencies (backend)
+pip install -r requirements.txt
+
+# Install Node.js dependencies (frontend)
+cd frontend-new
+npm install
+cd ..
+
 # Start the FastAPI backend (from project root)
 uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
 
-# Start the Streamlit frontend (in separate terminal)
-streamlit run frontend/streamlit_app.py
+# Start the SvelteKit frontend (in separate terminal from frontend-new/)
+cd frontend-new
+npm run dev
+# Frontend runs on http://localhost:5173
+```
+
+#### Frontend Development Commands
+```bash
+cd frontend-new
+
+# Start dev server with HMR
+npm run dev
+
+# Build for production
+npm run build
+
+# Preview production build
+npm preview
+
+# Type checking
+npm run check
+
+# Type checking in watch mode
+npm run check:watch
 ```
 
 #### Docker Deployment
 ```bash
 # IMPORTANT: Ensure .env file exists in project root first!
 
-# Build and run all services (backend, frontend, nginx-helper)
-docker compose up --build
+# Build the single-container SvelteKit application
+docker build -f Dockerfile.sveltekit -t word-chatbot:sveltekit .
 
-# Run in detached mode
-docker compose up -d
-
-# Stop services
-docker compose down
+# Run the container (serves both frontend and backend)
+docker run -d -p 3004:8000 --env-file .env --name word-chatbot word-chatbot:sveltekit
 
 # View logs
-docker compose logs -f
+docker logs -f word-chatbot
 
-# Rebuild specific service
-docker compose build backend
-docker compose build frontend
+# Stop container
+docker stop word-chatbot
+
+# Remove container
+docker rm word-chatbot
 
 # Access:
-# - Frontend UI: http://localhost:3004
-# - Backend API: http://localhost:8004/docs
+# - Full application: http://localhost:3004
+# - Backend API docs: http://localhost:3004/docs
+# - Health check: http://localhost:3004/health
 ```
+
+**Key improvements with SvelteKit deployment:**
+- Single container instead of 3 (backend, frontend, nginx-helper)
+- FastAPI serves static SvelteKit build files
+- No docker-compose required
+- No nginx-helper needed (SvelteKit handles base paths natively)
+- Simplified environment variable management
+- Faster startup and lower resource usage
 
 ## Specialized Agents
 
@@ -228,38 +266,55 @@ pytest tests/ --cov=backend --cov-report=html
 
 #### NGINX Reverse Proxy Deployment
 ```bash
-# The application supports deployment behind NGINX reverse proxy with path prefixes
+# SvelteKit handles base paths natively - no nginx-helper required!
 # See NGINX_DEPLOYMENT_GUIDE.md for complete setup instructions
 
-# Set BASE_URL_PATH environment variable for Streamlit
+# Set BASE_URL_PATH environment variable
 export BASE_URL_PATH=/sageapp04
 
-# TRAILING_SLASH_CHANGE: Main NGINX configuration determines if nginx-helper is needed
-# With trailing slash: location /sageapp04/ { proxy_pass http://127.0.0.1:3004/; }
-#   -> Strips prefix, requires nginx-helper to restore it
-# Without trailing slash: location /sageapp04 { proxy_pass http://127.0.0.1:3004; }
-#   -> Keeps prefix, nginx-helper not needed
+# Build and run the container
+docker build -f Dockerfile.sveltekit -t word-chatbot:sveltekit .
+docker run -d -p 8000:8000 --env-file .env word-chatbot:sveltekit
 
-# Start nginx-helper (if needed)
-docker run -d -p 3004:80 -v $(pwd)/nginx-helper.conf:/etc/nginx/conf.d/default.conf nginx:alpine
+# NGINX configuration (IT-managed)
+# location /sageapp04 {
+#     proxy_pass http://127.0.0.1:8000;
+#     # WebSocket support
+#     proxy_http_version 1.1;
+#     proxy_set_header Upgrade $http_upgrade;
+#     proxy_set_header Connection "upgrade";
+#     # ... standard headers
+# }
 ```
+
+**SIMPLIFIED**: No nginx-helper container needed with SvelteKit!
+- SvelteKit's adapter-static handles base paths at build time
+- Frontend assets use correct paths automatically
+- Single container deployment
+- Easier troubleshooting and maintenance
 
 #### Docker Production Deployment
 ```bash
 # Build for production
-docker compose build
+docker build -f Dockerfile.sveltekit -t word-chatbot:production .
 
-# Run in production
-docker compose up -d
+# Run in production mode
+docker run -d \
+  -p 8000:8000 \
+  --env-file .env.production \
+  --restart unless-stopped \
+  --name word-chatbot-prod \
+  word-chatbot:production
 
-# Deploy to Azure Web App
-# See DOCKER_DEPLOYMENT.md for complete Azure deployment instructions
+# Deploy to Azure Container Registry
+# See DOCKER_DEPLOYMENT.md for complete deployment instructions
 
-# Environment variables for production (set in .env file)
+# Environment variables for production (set in .env.production file)
 # - CURRENT_AI_PROVIDER: openai, azure_openai, anthropic, or google
 # - API keys for chosen provider (e.g., AZURE_OPENAI_API_KEY)
-# - BASE_URL_PATH: Path prefix if behind reverse proxy (optional)
+# - BASE_URL_PATH: Path prefix if behind reverse proxy (optional, e.g., /sageapp04)
 # - ENVIRONMENT: production
+# - PUBLIC_BACKEND_URL: Frontend API client URL (for SvelteKit)
 ```
 
 ### Development Tools
@@ -285,10 +340,34 @@ python backend/word_processor.py --input sample.docx --output output.docx --edit
 - **ai_client.py**: Unified LiteLLM client supporting multiple providers
 - **config.py**: Configuration management for AI providers and application settings
 
-### Frontend Structure (`frontend/`)
-- **streamlit_app.py**: Main Streamlit interface with dual functionality:
-  - Document analysis of existing tracked changes
-  - Processing new changes with AI instructions
+### Frontend Structure (`frontend-new/`)
+- **SvelteKit application** with TypeScript, TailwindCSS, and Skeleton UI
+- **src/routes/**: SvelteKit file-based routing
+  - `+page.svelte`: Main application page with tabbed interface
+  - `+layout.svelte`: Root layout with dark mode support
+- **src/lib/components/**: Reusable Svelte components
+  - `DocumentUpload.svelte`: File upload with drag-and-drop
+  - `ProcessingOptions.svelte`: LLM configuration and debug options
+  - `ProcessingResults.svelte`: Results display with download
+  - `ProcessingLogs.svelte`: Detailed processing logs viewer
+  - `AnalysisResults.svelte`: Document analysis results
+  - `Header.svelte`: Application header with dark mode toggle
+  - `Footer.svelte`: Application footer
+  - `Toast.svelte`: Notification system
+- **src/lib/stores/**: Svelte stores for state management
+  - `documentStore.ts`: Document state (main file, fallback file)
+  - `processingStore.ts`: Processing state and results
+  - `uiStore.ts`: UI state (dark mode, active tab, toasts)
+- **src/lib/api/**: API client and utilities
+  - `client.ts`: FastAPI backend communication
+  - `types.ts`: TypeScript interfaces and types
+- **src/lib/utils/**: Utility functions
+  - `index.ts`: Common utilities and helpers
+
+**Legacy frontend** (`frontend/`):
+- **streamlit_app.py**: Deprecated Streamlit interface
+- Maintained for backward compatibility only
+- Use SvelteKit frontend for all new development
 
 ### Legal Document Processing System
 The project includes advanced legal document processing with multiple phases:
@@ -300,11 +379,13 @@ The project includes advanced legal document processing with multiple phases:
 ### Core Processing Flow
 
 #### Standard Processing Mode
-1. User uploads DOCX file via Streamlit interface
-2. FastAPI backend extracts text using `_build_visible_text_map()` from word_processor
-3. LLM generates structured JSON edits with contextual and specific text identification
-4. Word processor applies changes as tracked revisions with precise XML manipulation
-5. Modified document is returned with processing logs
+1. User uploads DOCX file via SvelteKit interface
+2. Frontend sends file to FastAPI backend via API client
+3. Backend extracts text using `_build_visible_text_map()` from word_processor
+4. LLM generates structured JSON edits with contextual and specific text identification
+5. Word processor applies changes as tracked revisions with precise XML manipulation
+6. Modified document and logs returned to frontend
+7. User downloads processed document from SvelteKit UI
 
 #### Fallback Document Processing Modes
 **Tracked Changes Mode (Preferred):**
@@ -338,8 +419,10 @@ The system uses environment variables for AI provider configuration:
 
 ### Error Handling
 - Backend returns structured error responses with "Error_" prefixes
-- Frontend handles connection errors, timeouts, and HTTP errors gracefully
+- Frontend API client handles connection errors, timeouts, and HTTP errors gracefully
+- Toast notifications for user-facing errors
 - Processing logs track ambiguous changes and failures
+- TypeScript interfaces ensure type safety across frontend
 
 ### Document Processing
 - Text boundary validation ensures changes are properly word-bounded
@@ -352,6 +435,78 @@ The system uses environment variables for AI provider configuration:
 - Contextual text for unique identification
 - Specific old/new text pairs with change reasoning
 - Fallback handling for provider failures
+
+### SvelteKit Frontend Patterns
+
+#### State Management
+- **Svelte stores** for reactive state (document, processing, UI state)
+- **Writable stores** with TypeScript interfaces
+- Store subscriptions in components for reactive updates
+- Centralized state prevents prop drilling
+
+Example:
+```typescript
+import { documentStore } from '$lib/stores/documentStore';
+
+// Update state
+documentStore.set({ mainFile: file, fallbackFile: null });
+
+// Subscribe to state
+$: currentDoc = $documentStore.mainFile;
+```
+
+#### API Client Usage
+- Centralized API client in `src/lib/api/client.ts`
+- All backend communication goes through typed functions
+- Automatic base path handling from environment
+- Error handling with typed responses
+
+Example:
+```typescript
+import { processDocument } from '$lib/api/client';
+
+const result = await processDocument(formData);
+if (result.error) {
+  // Handle error
+} else {
+  // Process result
+}
+```
+
+#### Component Structure
+- **Presentation components**: Pure UI, receive props
+- **Container components**: Connect to stores, handle logic
+- **Composition**: Small, focused components composed together
+- **TypeScript**: All components use TypeScript for props and events
+
+Example component structure:
+```svelte
+<script lang="ts">
+  import type { ProcessingResult } from '$lib/api/types';
+
+  interface Props {
+    result: ProcessingResult;
+  }
+
+  let { result }: Props = $props();
+</script>
+
+<div class="component">
+  <!-- UI markup -->
+</div>
+```
+
+#### Styling Patterns
+- **TailwindCSS** for utility-first styling
+- **Skeleton UI** theme system for consistent design
+- **Dark mode** support via class-based switching
+- **Responsive design** with Tailwind breakpoints
+
+#### Form Handling
+- Native FormData for file uploads
+- Reactive form validation with Svelte stores
+- Progressive enhancement where possible
+- Loading states during async operations
 
 ## Important Implementation Details
 
@@ -386,33 +541,49 @@ The system uses environment variables for AI provider configuration:
 ## Configuration Notes
 
 - Environment files must be configured for each AI provider used
-- Backend URL configuration via `BACKEND_URL` environment variable (frontend uses this to connect to backend)
+- SvelteKit uses `PUBLIC_BACKEND_URL` for API client configuration (build-time variable)
 - Temporary file handling with automatic cleanup
 - Debug mode flags for verbose processing logs
 
 ### Reverse Proxy Configuration
 - `BASE_URL_PATH`: Set when deploying behind reverse proxy with path prefix (e.g., `/sageapp04`)
-- Streamlit uses this to generate correct URLs for WebSocket connections and static assets
-- See frontend/.streamlit/config.toml for CORS and WebSocket settings
-- See NGINX_DEPLOYMENT_GUIDE.md for complete NGINX setup instructions
+- SvelteKit adapter-static handles base paths at build time (configured in svelte.config.js)
+- No nginx-helper required - SvelteKit assets use correct paths automatically
+- See NGINX_DEPLOYMENT_GUIDE.md for simplified NGINX setup instructions
 
-### Docker Environment Variables
-- **Backend container**: AI_PROVIDER, API keys, model selection
-- **Frontend container**: BACKEND_URL (defaults to http://backend:8004), BASE_URL_PATH (optional)
-- **nginx-helper container**: Only needed when main NGINX strips path prefix (see TRAILING_SLASH_CHANGE comments)
-- See .env.example files for complete variable documentation
-- See DOCKER_DEPLOYMENT.md for production deployment guides
+### Environment Variables
+
+#### Backend (.env file)
+- `CURRENT_AI_PROVIDER`: openai, azure_openai, anthropic, or google
+- Provider-specific API keys (e.g., `AZURE_OPENAI_API_KEY`)
+- Model configuration (e.g., `AZURE_OPENAI_DEFAULT_DEPLOYMENT_NAME`)
+- `BASE_URL_PATH`: Path prefix for reverse proxy deployment (optional)
+
+#### Frontend (frontend-new/.env)
+- `PUBLIC_BACKEND_URL`: Backend API URL for development/production
+  - Development: `http://localhost:8000`
+  - Production: `http://localhost:8000` or custom domain
+- `BASE_URL_PATH`: Must match backend setting for reverse proxy deployments
+
+#### Docker Deployment
+- Single container serves both frontend and backend
+- Environment variables from root `.env` file
+- No docker-compose or nginx-helper needed
+- See `.env.example` for all available options
 
 When working with this codebase, prioritize understanding:
 1. **word_processor.py** XML manipulation logic for tracked changes
 2. **Multi-provider AI configuration** via LiteLLM
 3. **Tracked changes extraction** from fallback documents (TrackedChange dataclass)
-4. **NGINX reverse proxy** path handling for deployment scenarios
+4. **SvelteKit architecture** with stores, components, and API client
+5. **Simplified deployment** with single Docker container (no nginx-helper)
 
 ## Documentation Files
 
-- **NGINX_DEPLOYMENT_GUIDE.md**: Complete guide for NGINX reverse proxy setup with path prefix handling
-- **DOCKER_DEPLOYMENT.md**: Docker deployment guide for local dev, POC/demo, production, and Azure
+- **NGINX_DEPLOYMENT_GUIDE.md**: Simplified NGINX reverse proxy setup (no nginx-helper needed with SvelteKit)
+- **DOCKER_DEPLOYMENT.md**: Single-container Docker deployment guide
 - **FALLBACK_TRACKED_CHANGES.md**: Complete documentation for tracked changes extraction feature
+- **SVELTEKIT_MIGRATION.md**: Details on the Streamlit to SvelteKit migration
 - **README.md**: General project information and getting started guide
 - **CLAUDE.md** (this file): Developer guidance for working with the codebase
+- **frontend-new/README.md**: SvelteKit frontend-specific documentation
