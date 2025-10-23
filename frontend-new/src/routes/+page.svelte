@@ -36,26 +36,8 @@
 	} from '$lib/api';
 	import type { ProcessingOptions } from '$lib/types/api';
 
-	// Svelte 5 runes mode: Use $derived for reactive store values
-	let uploadedFile = $derived($appStore.uploadedFile);
-	let fallbackFile = $derived($appStore.fallbackFile);
-	let instructions = $derived($appStore.instructions);
-	let processingOptions = $derived($appStore.processingOptions);
-	let isProcessing = $derived($appStore.isProcessing);
-	let isAnalyzing = $derived($appStore.isAnalyzing);
-
-	let processedResult = $derived($resultsStore.processedResult);
-	let analysisResult = $derived($resultsStore.analysisResult);
-	let fallbackAnalysis = $derived($resultsStore.fallbackAnalysis);
-	let llmConfig = $derived($resultsStore.llmConfig);
-
-	let useFallbackMode = $derived($uiStore.useFallbackMode);
-	let analysisMode = $derived($uiStore.analysisMode);
-	let mergeStrategy = $derived($uiStore.mergeStrategy);
-	let debugLevel = $derived($uiStore.debugLevel);
-	let showProcessingLog = $derived($uiStore.showProcessingLog);
-
-	let formIsValid = $derived($isValid);
+	// Reactive store access - use $storeName syntax directly in templates
+	// No $derived needed - Svelte 5 auto-tracks store subscriptions
 
 	// Local state
 	let isMobile = $state(false);
@@ -117,12 +99,13 @@
 
 	// Process document
 	async function handleProcess() {
+		const uploadedFile = $appStore.uploadedFile;
 		if (!uploadedFile) {
 			toastStore.showToast('Please upload a document first', 'error');
 			return;
 		}
 
-		if (!formIsValid) {
+		if (!$isValid) {
 			toastStore.showToast('Please fix validation errors', 'error');
 			return;
 		}
@@ -132,26 +115,28 @@
 			resultsStore.clearProcessedResult();
 
 			// Map debug level to boolean flags
+			const debugLevel = $uiStore.debugLevel;
 			const debugMode = debugLevel !== 'off';
 			const extendedDebugMode = debugLevel === 'extended';
 
 			const options = {
-				...processingOptions,
+				...$appStore.processingOptions,
 				debugMode,
 				extendedDebugMode
 			};
 
 			let result;
-			if (useFallbackMode && fallbackFile) {
+			const fallbackFile = $appStore.fallbackFile;
+			if ($uiStore.useFallbackMode && fallbackFile) {
 				result = await processWithFallback(
 					uploadedFile,
 					fallbackFile,
-					instructions,
-					mergeStrategy,
+					$appStore.instructions,
+					$uiStore.mergeStrategy,
 					options
 				);
 			} else {
-				result = await processDocument(uploadedFile, instructions, options);
+				result = await processDocument(uploadedFile, $appStore.instructions, options);
 			}
 
 			resultsStore.setProcessedResult(result);
@@ -166,6 +151,7 @@
 
 	// Analyze document
 	async function handleAnalyze() {
+		const uploadedFile = $appStore.uploadedFile;
 		if (!uploadedFile) {
 			toastStore.showToast('Please upload a document first', 'error');
 			return;
@@ -175,7 +161,7 @@
 			appStore.setAnalyzing(true);
 			resultsStore.clearAnalysisResult();
 
-			const result = await analyzeDocument(uploadedFile, analysisMode);
+			const result = await analyzeDocument(uploadedFile, $uiStore.analysisMode);
 			resultsStore.setAnalysisResult(result);
 			toastStore.showToast('Analysis completed!', 'success');
 		} catch (error: any) {
@@ -188,13 +174,14 @@
 
 	// Analyze fallback
 	async function handleAnalyzeFallback() {
+		const fallbackFile = $appStore.fallbackFile;
 		if (!fallbackFile) {
 			toastStore.showToast('Please upload a fallback document first', 'error');
 			return;
 		}
 
 		try {
-			const context = instructions || 'General document processing';
+			const context = $appStore.instructions || 'General document processing';
 			const result = await analyzeFallbackRequirements(fallbackFile, context);
 			resultsStore.setFallbackAnalysis(result);
 			toastStore.showToast('Fallback analysis completed!', 'success');
@@ -206,6 +193,7 @@
 
 	// Download processed file
 	async function handleDownload() {
+		const processedResult = $resultsStore.processedResult;
 		if (!processedResult?.filename) {
 			toastStore.showToast('No processed file available', 'error');
 			return;
@@ -287,7 +275,7 @@
 						<label class="flex items-center gap-2 cursor-pointer">
 							<input
 								type="checkbox"
-								checked={useFallbackMode}
+								checked={$uiStore.useFallbackMode}
 								onchange={() => uiStore.toggleFallbackMode()}
 								class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
 							/>
@@ -295,11 +283,11 @@
 						</label>
 					</div>
 
-					{#if useFallbackMode}
+					{#if $uiStore.useFallbackMode}
 						<div class="space-y-4">
 							<FallbackUpload enabled={true} onfileselected={handleFallbackFileSelected} />
-							<MergeStrategy value={mergeStrategy} onchange={(e) => uiStore.setMergeStrategy(e.detail)} />
-							{#if fallbackFile}
+							<MergeStrategy value={$uiStore.mergeStrategy} onchange={(e) => uiStore.setMergeStrategy(e.detail)} />
+							{#if $appStore.fallbackFile}
 								<button
 									type="button"
 									onclick={handleAnalyzeFallback}
@@ -320,7 +308,7 @@
 						Instructions
 					</h3>
 					<InstructionsInput
-						value={instructions}
+						value={$appStore.instructions}
 						placeholder="Enter your editing instructions here..."
 						rows={6}
 						oninput={handleInstructionsChange}
@@ -334,7 +322,7 @@
 					<h3 class="text-sm font-semibold text-gray-900 dark:text-gray-50 uppercase tracking-wider mb-3">
 						Processing Options
 					</h3>
-					<OptionsPanel options={processingOptions} onchange={handleOptionsChange} />
+					<OptionsPanel options={$appStore.processingOptions} onchange={handleOptionsChange} />
 				</section>
 
 				<Divider />
@@ -344,7 +332,7 @@
 					<h3 class="text-sm font-semibold text-gray-900 dark:text-gray-50 uppercase tracking-wider mb-3">
 						Debug Mode
 					</h3>
-					<DebugOptions debugLevel={debugLevel} onchange={(e) => uiStore.setDebugLevel(e.detail)} />
+					<DebugOptions debugLevel={$uiStore.debugLevel} onchange={(e) => uiStore.setDebugLevel(e.detail)} />
 				</section>
 
 				<Divider />
@@ -354,25 +342,25 @@
 					<h3 class="text-sm font-semibold text-gray-900 dark:text-gray-50 uppercase tracking-wider mb-3">
 						Analysis Mode
 					</h3>
-					<AnalysisMode value={analysisMode} onchange={(e) => uiStore.setAnalysisMode(e.detail)} />
+					<AnalysisMode value={$uiStore.analysisMode} onchange={(e) => uiStore.setAnalysisMode(e.detail)} />
 				</section>
 
 				<Divider />
 
 				<!-- Action Buttons -->
 				<section class="space-y-3">
-					<ProcessButton loading={isProcessing} disabled={!formIsValid || isProcessing} onclick={handleProcess} />
-					<AnalyzeButton loading={isAnalyzing} disabled={!uploadedFile || isAnalyzing} onclick={handleAnalyze} />
+					<ProcessButton loading={$appStore.isProcessing} disabled={!$isValid || $appStore.isProcessing} onclick={handleProcess} />
+					<AnalyzeButton loading={$appStore.isAnalyzing} disabled={!$appStore.uploadedFile || $appStore.isAnalyzing} onclick={handleAnalyze} />
 				</section>
 
 				<!-- LLM Config (Advanced) -->
-				{#if llmConfig}
+				{#if $resultsStore.llmConfig}
 					<details class="mt-6">
 						<summary class="text-sm font-semibold text-gray-900 dark:text-gray-50 uppercase tracking-wider cursor-pointer">
 							LLM Configuration
 						</summary>
 						<div class="mt-3">
-							<LLMConfig currentConfig={llmConfig} onupdate={handleLLMConfigUpdate} />
+							<LLMConfig currentConfig={$resultsStore.llmConfig} onupdate={handleLLMConfigUpdate} />
 						</div>
 					</details>
 				{/if}
@@ -383,7 +371,7 @@
 		<main class="flex-1 overflow-y-auto bg-gray-100 dark:bg-gray-800 p-4 sm:p-6 lg:p-8">
 			<div class="max-w-7xl mx-auto space-y-6">
 				<!-- Welcome / Status -->
-				{#if !processedResult && !analysisResult && !isProcessing && !isAnalyzing}
+				{#if !$resultsStore.processedResult && !$resultsStore.analysisResult && !$appStore.isProcessing && !$appStore.isAnalyzing}
 					<Card elevated={false} padding="lg">
 						<h2 class="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-gray-50 mb-4">
 							Welcome to Word Document Assistant
@@ -402,7 +390,7 @@
 				{/if}
 
 				<!-- Processing Indicator -->
-				{#if isProcessing}
+				{#if $appStore.isProcessing}
 					<Card elevated={true} padding="lg">
 						<div class="flex flex-col items-center justify-center py-8">
 							<LoadingSpinner size="lg" message="Processing document..." />
@@ -411,7 +399,7 @@
 				{/if}
 
 				<!-- Analysis Indicator -->
-				{#if isAnalyzing}
+				{#if $appStore.isAnalyzing}
 					<Card elevated={true} padding="lg">
 						<div class="flex flex-col items-center justify-center py-8">
 							<LoadingSpinner size="lg" message="Analyzing document..." />
@@ -420,19 +408,19 @@
 				{/if}
 
 				<!-- Processing Results -->
-				{#if processedResult && !isProcessing}
-					<ResultsDisplay result={processedResult} />
+				{#if $resultsStore.processedResult && !$appStore.isProcessing}
+					<ResultsDisplay result={$resultsStore.processedResult} />
 
-					{#if processedResult.filename}
+					{#if $resultsStore.processedResult.filename}
 						<Card elevated={false} padding="lg">
 							<h3 class="text-lg font-semibold text-gray-900 dark:text-gray-50 mb-4">Download Processed Document</h3>
-							<DownloadButton filename={processedResult.filename} disabled={false} onclick={handleDownload} />
+							<DownloadButton filename={$resultsStore.processedResult.filename} disabled={false} onclick={handleDownload} />
 						</Card>
 					{/if}
 
-					{#if processedResult.processing_log && showProcessingLog}
-						<ProcessingLog logContent={processedResult.processing_log} expanded={true} />
-					{:else if processedResult.processing_log}
+					{#if $resultsStore.processedResult.processing_log && $uiStore.showProcessingLog}
+						<ProcessingLog logContent={$resultsStore.processedResult.processing_log} expanded={true} />
+					{:else if $resultsStore.processedResult.processing_log}
 						<button
 							type="button"
 							onclick={() => uiStore.toggleProcessingLog()}
@@ -442,22 +430,22 @@
 						</button>
 					{/if}
 
-					{#if processedResult.debug_info && (debugLevel === 'standard' || debugLevel === 'extended')}
-						<DebugInfo debugInfo={processedResult.debug_info} />
+					{#if $resultsStore.processedResult.debug_info && ($uiStore.debugLevel === 'standard' || $uiStore.debugLevel === 'extended')}
+						<DebugInfo debugInfo={$resultsStore.processedResult.debug_info} />
 					{/if}
 				{/if}
 
 				<!-- Analysis Results -->
-				{#if analysisResult && !isAnalyzing}
+				{#if $resultsStore.analysisResult && !$appStore.isAnalyzing}
 					<Card elevated={false} padding="lg">
 						<h3 class="text-lg font-semibold text-gray-900 dark:text-gray-50 mb-4">Analysis Results</h3>
-						<AnalysisResults analysisContent={analysisResult.analysis} />
+						<AnalysisResults analysisContent={$resultsStore.analysisResult.analysis} />
 					</Card>
 				{/if}
 
 				<!-- Fallback Analysis Results -->
-				{#if fallbackAnalysis}
-					<FallbackAnalysis analysisData={fallbackAnalysis} />
+				{#if $resultsStore.fallbackAnalysis}
+					<FallbackAnalysis analysisData={$resultsStore.fallbackAnalysis} />
 				{/if}
 			</div>
 		</main>
