@@ -1085,8 +1085,10 @@ async def health_check():
 # Serve SvelteKit static files (must be AFTER all API routes)
 # This allows the single-container deployment to serve the built frontend
 if os.path.exists("static"):
-    app.mount("/", StaticFiles(directory="static", html=True), name="static")
-    print("Static file serving enabled for SvelteKit frontend at /static")
+    base_url_path = os.getenv("BASE_URL_PATH", "").rstrip("/")
+    mount_path = base_url_path if base_url_path else "/"
+    app.mount(mount_path, StaticFiles(directory="static", html=True), name="static")
+    print(f"Static file serving enabled for SvelteKit frontend at {mount_path}")
 
 @app.get("/{full_path:path}")
 async def serve_spa(full_path: str):

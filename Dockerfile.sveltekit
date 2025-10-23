@@ -22,9 +22,9 @@ RUN npm ci
 COPY frontend-new/ ./
 
 # Set build-time environment variables for SvelteKit
-# BASE_URL_PATH: Leave empty for local/VM deployment (NGINX strips prefix)
+# BASE_URL_PATH: Set to /sageapp04 for reverse proxy deployment
 # PUBLIC_BACKEND_URL: Empty string for same-origin API calls
-ARG BASE_URL_PATH=
+ARG BASE_URL_PATH=/sageapp04
 ENV PUBLIC_BASE_URL_PATH=${BASE_URL_PATH}
 ENV PUBLIC_BACKEND_URL=
 
