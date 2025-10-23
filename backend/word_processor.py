@@ -779,10 +779,10 @@ def process_document_with_edits(
     # Text extraction verification disabled
     error_log_file_path: Optional[str] = None
     global DEBUG_MODE, EXTENDED_DEBUG_MODE, CASE_SENSITIVE_SEARCH, ADD_COMMENTS_TO_CHANGES
-    DEBUG_MODE = False  # Force debug off
-    EXTENDED_DEBUG_MODE = False  # Force extended debug off
+    DEBUG_MODE = debug_mode_flag  # Use parameter from caller
+    EXTENDED_DEBUG_MODE = extended_debug_mode_flag  # Use parameter from caller
     CASE_SENSITIVE_SEARCH = case_sensitive_flag
-    ADD_COMMENTS_TO_CHANGES = False  # Force comments off
+    ADD_COMMENTS_TO_CHANGES = add_comments_param  # Use parameter from caller
     # Debug output disabled
     log_debug(f"Script starting. Input: {input_docx_path}, Output: {output_docx_path}")
     log_debug(f"Settings - Debug:{DEBUG_MODE}, ExtDebug:{EXTENDED_DEBUG_MODE}, CaseSensitive:{CASE_SENSITIVE_SEARCH}, AddComments:{ADD_COMMENTS_TO_CHANGES}, Author:{author_name}")

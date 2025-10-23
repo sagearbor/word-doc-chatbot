@@ -543,8 +543,21 @@ with cols_main[1]: # Right column for displaying results/analysis
 
     if st.session_state.log_content and not st.session_state.processing:
         st.markdown("---")
-        st.subheader("📝 New Changes Processing Log")
-        st.text_area("Log Details:", value=st.session_state.log_content, height=200, disabled=True, label_visibility="collapsed")
+        # Check if there are issues/rejected edits in the log
+        has_issues = "Type:" in st.session_state.log_content and "Issue:" in st.session_state.log_content
+
+        if has_issues:
+            # Show warning with expander for rejected/skipped edits
+            with st.expander("⚠️ Processing Log (Why Some Edits Were Skipped)", expanded=False):
+                st.markdown("**Common reasons edits are skipped:**")
+                st.markdown("- `context not found` - The text wasn't found in the document")
+                st.markdown("- `ambiguous` - Multiple matches found, needs manual review")
+                st.markdown("- `boundary rule skip` - Text doesn't have proper word boundaries")
+                st.text_area("Full Log Details:", value=st.session_state.log_content, height=200, disabled=True, label_visibility="collapsed")
+        else:
+            # Just show a simple success message
+            with st.expander("✅ Processing Log", expanded=False):
+                st.text_area("Log Details:", value=st.session_state.log_content, height=150, disabled=True, label_visibility="collapsed")
         # st.session_state.log_content = None # Optionally clear
 
 # Placeholder for no action yet
