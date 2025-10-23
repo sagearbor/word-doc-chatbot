@@ -1082,14 +1082,17 @@ async def health_check():
         "workflow_orchestrator": WORKFLOW_ORCHESTRATOR_AVAILABLE
     }
 
-# Serve SvelteKit static files (must be AFTER all API routes)
-# This allows the single-container deployment to serve the built frontend
-# IMPORTANT: Always mount at root "/" because NGINX strips the base path prefix
-# before proxying to this container. The SvelteKit app itself is built with
-# the base path for client-side routing.
+# Serve SvelteKit static assets (must be AFTER all API routes)
+# NGINX strips /sageapp04 prefix, so requests come in as:
+#   /_app/file.js -> serves from static/_app/file.js
+#   / -> handled by catch-all route below to serve index.html
 if os.path.exists("static"):
-    app.mount("/", StaticFiles(directory="static", html=True), name="static")
-    print("Static file serving enabled for SvelteKit frontend at /")
+    # Mount static assets at /_app to serve JS/CSS files
+    if os.path.exists("static/_app"):
+        app.mount("/_app", StaticFiles(directory="static/_app"), name="static_assets")
+        print("Static asset serving enabled at /_app")
+    else:
+        print("Warning: static/_app directory not found")
 
 @app.get("/{full_path:path}")
 async def serve_spa(full_path: str):
