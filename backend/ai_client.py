@@ -62,6 +62,12 @@ class UnifiedAIClient:
                 print(f"[AI_CLIENT_DEBUG] Cleaned api_version: '{cleaned_api_version}' (Type: {type(cleaned_api_version)})") # DEBUG
                 params["api_version"] = cleaned_api_version
         
+        # Fix for GPT-5 models: they only support temperature=1
+        if "gpt-5" in full_model.lower() and "temperature" in params:
+            if params["temperature"] == 0.0:
+                print(f"[AI_CLIENT_DEBUG] Adjusting temperature from 0.0 to 1.0 for GPT-5 model")
+                params["temperature"] = 1.0
+
         try:
             print(f"[AI_CLIENT_DEBUG] Params to litellm.completion (generate_response): {params}") # DEBUG
             response = litellm.completion(**params)
@@ -112,6 +118,12 @@ class UnifiedAIClient:
                 print(f"[AI_CLIENT_DEBUG] Cleaned api_version (chat): '{cleaned_api_version}' (Type: {type(cleaned_api_version)})") # DEBUG
                 params["api_version"] = cleaned_api_version
         
+        # Fix for GPT-5 models: they only support temperature=1
+        if "gpt-5" in full_model.lower() and "temperature" in params:
+            if params["temperature"] == 0.0:
+                print(f"[AI_CLIENT_DEBUG] Adjusting temperature from 0.0 to 1.0 for GPT-5 model")
+                params["temperature"] = 1.0
+
         try:
             print(f"[AI_CLIENT_DEBUG] Params to litellm.completion (chat_completion): {params}") # DEBUG
             response = litellm.completion(**params)
