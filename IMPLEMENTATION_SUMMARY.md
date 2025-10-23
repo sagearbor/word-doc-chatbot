@@ -428,22 +428,37 @@ All documentation is comprehensive and ready for use:
 
 ## Key Environment Variables
 
-### Backend (.env or docker-compose.yml)
+All environment variables should be set in the `.env` file in the project root. Docker Compose will automatically read this file.
+
+### Required Variables (in .env)
 ```bash
 # AI Provider Configuration (required)
-AI_PROVIDER=openai  # or azure_openai, anthropic, google
-OPENAI_API_KEY=sk-...  # or appropriate key for provider
+CURRENT_AI_PROVIDER=azure_openai  # or openai, anthropic, google
 
-# Optional: Model selection
-OPENAI_MODEL=gpt-4o-mini
+# For Azure OpenAI
+AZURE_OPENAI_API_KEY=your-key-here
+AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com/
+AZURE_OPENAI_API_VERSION=2025-03-01-preview
+AZURE_OPENAI_DEFAULT_DEPLOYMENT_NAME=gpt-5-mini
+
+# OR for OpenAI
+# OPENAI_API_KEY=sk-...
+
+# OR for Anthropic
+# ANTHROPIC_API_KEY=sk-ant-...
+
+# OR for Google
+# GOOGLE_API_KEY=...
 ```
 
-### Frontend (.env or docker-compose.yml)
+### Optional Variables
 ```bash
-# Backend connection
-BACKEND_URL=http://backend:8004  # Docker service name, or http://localhost:8004 for local
+# Application Settings
+ENVIRONMENT=development
+DEBUG_MODE=true
+LOG_LEVEL=INFO
 
-# NGINX / Reverse Proxy (optional)
+# Frontend Settings (for reverse proxy deployment)
 BASE_URL_PATH=/sageapp04  # Only when behind reverse proxy with path prefix
 ```
 
@@ -451,51 +466,52 @@ BASE_URL_PATH=/sageapp04  # Only when behind reverse proxy with path prefix
 
 ## Quick Start Commands
 
+### Recommended: Docker Compose (All Scenarios)
+
+**First time setup:**
+```bash
+# 1. Ensure .env file exists in project root with your API key
+# Already done - you have .env with Azure OpenAI configuration!
+
+# 2. Check for port conflicts (optional)
+lsof -i :3004 :8004 :8501
+```
+
+**Start the application:**
+```bash
+# Build and run all services (backend, frontend, nginx-helper)
+docker compose up --build
+
+# Or run in background
+docker compose up -d
+
+# View logs
+docker compose logs -f
+
+# Stop services
+docker compose down
+```
+
+**Access the application:**
+- Main UI: http://localhost:3004 (via nginx-helper)
+- Backend API: http://localhost:8004/docs (Swagger UI)
+
+**Note:** Ports are bound to 127.0.0.1 for security. If accessing remotely, use SSH tunnel:
+```bash
+# On your local machine
+ssh -L 3004:localhost:3004 scb2@alp-dsvm-003
+# Then access http://localhost:3004 in your browser
+```
+
 ### Local Development (No Docker)
 ```bash
 # Terminal 1 - Backend
 uvicorn backend.main:app --reload --host 0.0.0.0 --port 8004
 
-# Terminal 2 - Frontend
-export BASE_URL_PATH=/sageapp04  # Optional, for testing reverse proxy
+# Terminal 2 - Frontend (optional BASE_URL_PATH for reverse proxy testing)
 streamlit run frontend/streamlit_app.py
-```
 
-### Docker Development
-```bash
-# Build and run
-docker-compose up --build
-
-# Or run in background
-docker-compose up -d
-
-# View logs
-docker-compose logs -f
-
-# Stop
-docker-compose down
-```
-
-### Production VM (with NGINX)
-```bash
-# 1. Start nginx-helper
-docker run -d \
-  --name nginx-helper \
-  --restart unless-stopped \
-  -p 3004:80 \
-  -v $(pwd)/nginx-helper.conf:/etc/nginx/conf.d/default.conf \
-  nginx:alpine
-
-# 2. Start application with Docker Compose
-docker-compose up -d
-
-# 3. Check status
-docker ps
-docker-compose ps
-
-# 4. View logs
-docker logs nginx-helper
-docker-compose logs -f
+# Access at http://localhost:8501
 ```
 
 ---
@@ -522,6 +538,37 @@ Potential improvements to consider:
 - [ ] Preview mode before applying changes
 - [ ] Support for formatting changes (bold, italic, etc.)
 - [ ] Multi-document fallback support
+
+### Frontend Migration for Scalability
+**Current:** Streamlit (simple, good for POC/demo)
+**Future:** SvelteKit or Next.js (for 1000+ concurrent users)
+
+**Why migrate:**
+- Streamlit becomes slow with multiple concurrent users
+- Better performance with static site generation
+- More control over UI/UX
+- Smaller bundle sizes
+
+**Recommended stack:**
+- **SvelteKit + Skeleton UI** (most readable code, fast development)
+- OR **Next.js + shadcn/ui** (industry standard, large community)
+
+**Effort:** 1-2 weeks to rebuild current Streamlit UI
+
+**Architecture after migration:**
+```yaml
+services:
+  backend:
+    # FastAPI - already has all the endpoints needed!
+    ports:
+      - "8004:8004"
+  frontend:
+    # SvelteKit/Next.js - calls backend API
+    ports:
+      - "3004:3000"
+```
+
+See FUTURE_FRONTEND_MIGRATION.md (to be created) for detailed migration guide.
 
 ---
 

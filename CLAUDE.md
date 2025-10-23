@@ -13,10 +13,14 @@ This is a Word Document Tracked Changes Chatbot that allows users to upload DOCX
 # Install dependencies
 pip install -r requirements.txt
 
-# Set up environment files
-cp backend/.env.example backend/.env
-cp frontend/.env.example frontend/.env
-# Edit these files to set AI_PROVIDER and API keys
+# Set up environment file (single .env in project root)
+cp .env.example .env
+# Edit .env to set CURRENT_AI_PROVIDER and API keys for your chosen provider
+# Example for Azure OpenAI:
+#   CURRENT_AI_PROVIDER=azure_openai
+#   AZURE_OPENAI_API_KEY=your-key
+#   AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com/
+#   AZURE_OPENAI_DEFAULT_DEPLOYMENT_NAME=gpt-5-mini
 ```
 
 ### Running the Application
@@ -32,21 +36,27 @@ streamlit run frontend/streamlit_app.py
 
 #### Docker Deployment
 ```bash
+# IMPORTANT: Ensure .env file exists in project root first!
+
 # Build and run all services (backend, frontend, nginx-helper)
-docker-compose up --build
+docker compose up --build
 
 # Run in detached mode
-docker-compose up -d
+docker compose up -d
 
 # Stop services
-docker-compose down
+docker compose down
 
 # View logs
-docker-compose logs -f
+docker compose logs -f
 
 # Rebuild specific service
-docker-compose build backend
-docker-compose build frontend
+docker compose build backend
+docker compose build frontend
+
+# Access:
+# - Frontend UI: http://localhost:3004
+# - Backend API: http://localhost:8004/docs
 ```
 
 ### Testing
@@ -86,16 +96,19 @@ docker run -d -p 3004:80 -v $(pwd)/nginx-helper.conf:/etc/nginx/conf.d/default.c
 #### Docker Production Deployment
 ```bash
 # Build for production
-docker-compose -f docker-compose.yml build
+docker compose build
+
+# Run in production
+docker compose up -d
 
 # Deploy to Azure Web App
 # See DOCKER_DEPLOYMENT.md for complete Azure deployment instructions
 
-# Environment variables for production
-# - AI_PROVIDER: openai, azure_openai, anthropic, or google
-# - API keys for chosen provider
-# - BASE_URL_PATH: Path prefix if behind reverse proxy
-# - BACKEND_URL: Backend service URL (for frontend)
+# Environment variables for production (set in .env file)
+# - CURRENT_AI_PROVIDER: openai, azure_openai, anthropic, or google
+# - API keys for chosen provider (e.g., AZURE_OPENAI_API_KEY)
+# - BASE_URL_PATH: Path prefix if behind reverse proxy (optional)
+# - ENVIRONMENT: production
 ```
 
 ### Development Tools

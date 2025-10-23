@@ -18,24 +18,25 @@ services:
     container_name: word-doc-chatbot-backend
     restart: unless-stopped
     environment:
-      # AI Provider Configuration (set in .env file)
-      - AI_PROVIDER=${AI_PROVIDER:-openai}
+      # AI Provider Configuration (set in .env file in project root)
+      - CURRENT_AI_PROVIDER=${CURRENT_AI_PROVIDER:-openai}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - AZURE_OPENAI_API_KEY=${AZURE_OPENAI_API_KEY}
       - AZURE_OPENAI_ENDPOINT=${AZURE_OPENAI_ENDPOINT}
       - AZURE_OPENAI_API_VERSION=${AZURE_OPENAI_API_VERSION:-2024-02-15-preview}
+      - AZURE_OPENAI_DEFAULT_DEPLOYMENT_NAME=${AZURE_OPENAI_DEFAULT_DEPLOYMENT_NAME}
       - AZURE_OPENAI_DEPLOYMENT=${AZURE_OPENAI_DEPLOYMENT}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - GOOGLE_API_KEY=${GOOGLE_API_KEY}
 
       # Application Settings
       - ENVIRONMENT=${ENVIRONMENT:-development}
-      - DEBUG=${DEBUG:-false}
+      - DEBUG_MODE=${DEBUG_MODE:-false}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
-    env_file:
-      - backend/.env
     ports:
-      # Only expose to localhost - nginx-helper or main NGINX will proxy
+      # Backend runs on port 8000 inside container, exposed as 8004 on host
+      # Only expose to localhost for security - nginx-helper or main NGINX will proxy
+      # Note: 127.0.0.1 binding requires local access or SSH tunnel
       - "127.0.0.1:8004:8000"
     networks:
       - app-network
@@ -116,7 +117,9 @@ services:
     container_name: word-doc-chatbot-nginx-helper
     restart: unless-stopped
     ports:
-      # Expose to localhost only - main NGINX will proxy to this
+      # NGINX listens on port 80 inside container, exposed as 3004 on host
+      # Only expose to localhost for security - main NGINX on VM will proxy to this
+      # Access via: http://localhost:3004 (local) or SSH tunnel if remote
       - "127.0.0.1:3004:80"
     volumes:
       # Mount the nginx-helper configuration
