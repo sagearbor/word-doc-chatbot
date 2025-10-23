@@ -58,9 +58,8 @@
 		sidebarOpen = false;
 	}
 
-	// File upload handlers
-	function handleFileSelected(event: CustomEvent<File>) {
-		const file = event.detail;
+	// File upload handlers - these are direct function calls, not CustomEvents
+	function handleFileSelected(file: File) {
 		appStore.setFile(file);
 		validationStore.validateFile(file);
 		toastStore.showToast(`File selected: ${file.name}`, 'info');
@@ -72,13 +71,11 @@
 		toastStore.showToast('File removed', 'info');
 	}
 
-	function handleFileError(event: CustomEvent<string>) {
-		const error = event.detail;
+	function handleFileError(error: string) {
 		toastStore.showToast(error, 'error');
 	}
 
-	function handleFallbackFileSelected(event: CustomEvent<File>) {
-		const file = event.detail;
+	function handleFallbackFileSelected(file: File) {
 		appStore.setFallbackFile(file);
 		toastStore.showToast(`Fallback file selected: ${file.name}`, 'info');
 	}
@@ -92,8 +89,7 @@
 	}
 
 	// Options handler
-	function handleOptionsChange(event: CustomEvent<ProcessingOptions>) {
-		const options = event.detail;
+	function handleOptionsChange(options: ProcessingOptions) {
 		appStore.updateOptions(options);
 	}
 
@@ -220,8 +216,8 @@
 	}
 
 	// Update LLM config
-	async function handleLLMConfigUpdate(event: CustomEvent<{ extractionMethod: string; instructionMethod: string }>) {
-		const { extractionMethod, instructionMethod } = event.detail;
+	async function handleLLMConfigUpdate(config: { extractionMethod: string; instructionMethod: string }) {
+		const { extractionMethod, instructionMethod } = config;
 		try {
 			const config = await setLLMConfig(extractionMethod, instructionMethod);
 			resultsStore.setLLMConfig(config);
@@ -342,7 +338,7 @@
 					<h3 class="text-sm font-semibold text-gray-900 dark:text-gray-50 uppercase tracking-wider mb-3">
 						Analysis Mode
 					</h3>
-					<AnalysisMode value={$uiStore.analysisMode} onchange={(e) => uiStore.setAnalysisMode(e.detail)} />
+					<AnalysisMode value={$uiStore.analysisMode} onchange={(mode) => uiStore.setAnalysisMode(mode)} />
 				</section>
 
 				<Divider />
