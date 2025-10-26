@@ -4,26 +4,31 @@ This project provides a modern web application for applying AI-suggested edits t
 
 ## Running
 
-1. Install the requirements
+1. Install Python dependencies:
    ```bash
    pip install -r requirements.txt
    ```
-2. Copy `backend/.env.example` to `backend/.env` and edit it to set
-   `AI_PROVIDER` and the API keys for that provider. Also copy
-   `frontend/.env.example` to `frontend/.env`.
-3. Start the backend(s)
+2. Install frontend dependencies:
    ```bash
-   #uvicorn backend.main:app --reload
-   uvicorn backend.main:app --reload --port 8000
-   #uvicorn app_main.main:app --reload --port 8000
-   #uvicorn service_unzipper.unzipper_api:app --reload --port 8001
+   cd frontend-new
+   npm install
+   cd ..
    ```
-4. In another terminal start the Streamlit app
+3. Copy `.env.example` to `.env` in the project root and set your AI provider credentials.  
+   Optional: copy `frontend-new/.env.example` to `frontend-new/.env.development` if you need to override the default frontend environment values.
+4. Start the FastAPI backend from the project root:
    ```bash
-   streamlit run frontend/streamlit_app.py
+   uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
+   ```
+5. In another terminal start the SvelteKit frontend:
+   ```bash
+   cd frontend-new
+   npm run dev
    ```
 
-Open the URL shown by Streamlit and upload a `.docx` file. Type instructions in the chat box and a download link for the edited document will appear in the assistant response.
+Open `http://localhost:5173` to use the application. The frontend is configured to talk to the backend at `http://localhost:8000` by default.
+
+> **Note:** The legacy Streamlit UI has been retired. If you need to reference it, check the git history.
 
 ## Tech Stack
 
@@ -59,7 +64,7 @@ Open the URL shown by Streamlit and upload a `.docx` file. Type instructions in 
   - `src/lib/components/`: Reusable Svelte components
   - `src/lib/stores/`: Svelte stores for state management
   - `src/lib/api/`: API client and utilities
-- `frontend/`: Legacy Streamlit frontend (deprecated)
+- `archive/`: Historical assets and experiments (the retired Streamlit UI exists only in older commits)
 - `requirements.txt`: Python dependencies
 
 ## Setup and Running
@@ -81,8 +86,9 @@ Open the URL shown by Streamlit and upload a `.docx` file. Type instructions in 
 2.  **Create and activate a virtual environment (recommended):**
     ```bash
     python -m venv venv
-    source source venv/Scripts/activate # Use On Windows use 
-    # source venv/bin/activate  # Use on Unix, Mac, WSL systems
+    source venv/bin/activate  # macOS/Linux/WSL
+    # On Windows (PowerShell):
+    # .\venv\Scripts\Activate.ps1
     ```
 
 
@@ -93,7 +99,7 @@ Open the URL shown by Streamlit and upload a `.docx` file. Type instructions in 
     ```
 
 4.  **Configure your AI provider:**
-    Copy `backend/.env.example` to `backend/.env` and edit the values:
+    Copy `.env.example` to `.env` in the project root and edit the values:
     ```
     AI_PROVIDER=openai  # or azure_openai, anthropic, google
     OPENAI_API_KEY="your_openai_api_key_here"
@@ -101,6 +107,7 @@ Open the URL shown by Streamlit and upload a `.docx` file. Type instructions in 
     ```
     These `.env` files are ignored by git and should not be committed.
     Alternatively, you can set the variables in your shell environment.
+    Optional: copy `frontend-new/.env.example` to `frontend-new/.env.development` if you need to override frontend defaults.
 
 ### Running the Application
 
@@ -245,4 +252,3 @@ The LLM is prompted to return a JSON list of objects, where each object has the 
     "reason_for_change": "A brief explanation from the LLM why this change is being made."
   }
 ]
-
