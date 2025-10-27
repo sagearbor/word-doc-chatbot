@@ -264,12 +264,43 @@ See main documentation:
 - `CLAUDE.md` - Project overview
 - `backend/word_processor.py` - Core document processing logic
 
+## Automated Testing (When Tests Timeout)
+
+If automated tests timeout before completion, you can still analyze results from backend logs:
+
+```bash
+# Run automated test script
+python tests/run_baseline_tests.py
+
+# If tests timeout, check backend logs
+# Look for these key sections in output:
+# 1. "📊 DETAILED LLM SUGGESTIONS ANALYSIS" - Shows what edits LLM generated
+# 2. "🔍 VALIDATION RESULTS" - Shows which edits passed validation
+# 3. "DEBUG (word_processor)" - Shows which edits were applied
+
+# Backend logs contain full details even when script times out
+```
+
+**What to look for in logs:**
+- Number of suggestions generated (e.g., "🎯 Generated 10 intelligent suggestions")
+- Validation success rate (e.g., "📊 VALIDATION SUMMARY: 10/10 edits passed")
+- Edit application results (search for "✅ Successfully applied edit" or "❌ Failed to apply")
+
+See `BASELINE_TEST_REPORT.md` for example of analyzing backend logs to extract test results even when automated script times out.
+
 ## Summary
 
 ✅ 3 test cases ready
 ✅ All metadata documented
 ✅ Naming convention established
+✅ Automated test script created (`tests/run_baseline_tests.py`)
+✅ Baseline testing performed (Case 01 analyzed from logs)
 ⚠️ Expected outputs need to be defined by user
-⚠️ Baseline testing not yet performed
+⚠️ Tests need longer timeout (300s) or manual verification
+
+**Test Results So Far:**
+- **Case 01:** 10/10 LLM suggestions generated, 10/10 validated (see BASELINE_TEST_REPORT.md)
+- **Case 02:** Timed out during processing
+- **Case 03:** API parameter error (needs fix)
 
 **Ready for iterative testing to improve AI accuracy!**

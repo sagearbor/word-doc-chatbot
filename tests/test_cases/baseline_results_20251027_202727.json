@@ -1,0 +1,17 @@
+[
+  {
+    "test_case_id": "case_01",
+    "status": "error",
+    "error": "HTTPConnectionPool(host='127.0.0.1', port=8888): Read timed out. (read timeout=120)"
+  },
+  {
+    "test_case_id": "case_02",
+    "status": "error",
+    "error": "HTTPConnectionPool(host='127.0.0.1', port=8888): Read timed out. (read timeout=120)"
+  },
+  {
+    "test_case_id": "case_03",
+    "status": "failed",
+    "error": "{\"detail\":[{\"type\":\"missing\",\"loc\":[\"body\",\"file\"],\"msg\":\"Field required\",\"input\":null,\"url\":\"https://errors.pydantic.dev/2.5/v/missing\"},{\"type\":\"missing\",\"loc\":[\"body\",\"instructions\"],\"msg\":\"Field required\",\"input\":null,\"url\":\"https://errors.pydantic.dev/2.5/v/missing\"}]}"
+  }
+]
