@@ -1,0 +1,159 @@
+{
+  "test_case_id": "case_02",
+  "description": "Complex contract editing with insurance, IP ownership, and record retention requirements",
+  "type": "fallback_document",
+  "created_date": "2025-10-27",
+  "status": "active",
+  "priority": "medium",
+  "tags": ["legal", "contract", "professional_services", "insurance", "IP_rights"],
+
+  "input_files": [
+    {
+      "filename": "case_02_input_service_agreement.docx",
+      "original_source": "tests/fixtures/test_main_document.docx (reused)",
+      "description": "Same basic service agreement as case_01, but tested against more complex requirements",
+      "word_count": 115,
+      "paragraph_count": 9,
+      "has_tracked_changes": false,
+      "content_summary": "Generic service agreement - testing how system handles more complex/comprehensive requirements than the base contract addresses"
+    }
+  ],
+
+  "fallback_files": [
+    {
+      "filename": "case_02_fallback_comprehensive_guidelines.docx",
+      "original_source": "tests/fixtures/test_complex_fallback.docx",
+      "description": "Comprehensive contract editing guidelines with critical requirements, performance standards, and restrictions",
+      "word_count": 203,
+      "paragraph_count": 14,
+      "requirement_keywords": {
+        "must": 3,
+        "shall": 2,
+        "required": 2,
+        "prohibited": 1
+      },
+      "content_summary": "Advanced requirements including: professional liability insurance ($1M minimum), intellectual property ownership, 7-year record retention, monthly status reports, quality assurance testing, conflict of interest prohibitions, and subcontracting restrictions."
+    }
+  ],
+
+  "prompt_files": [],
+
+  "expected_files": [
+    {
+      "filename": "case_02_expected_changes.docx",
+      "description": "Service agreement with comprehensive changes applied",
+      "expected_changes_count": 12,
+      "status": "TBD - needs to be created by user",
+      "expected_changes": [
+        {
+          "change_number": 1,
+          "section": "New section or 1. GENERAL PROVISIONS",
+          "old_text": "[Insert or modify]",
+          "new_text": "The service provider must obtain professional liability insurance of at least $1,000,000",
+          "reason": "Add insurance requirement per requirement 1.1",
+          "requirement_source": "1.1 The service provider must obtain professional liability insurance"
+        },
+        {
+          "change_number": 2,
+          "section": "New section or 2. DELIVERABLES",
+          "old_text": "[Insert or modify]",
+          "new_text": "All intellectual property created during the engagement shall be owned by the Client",
+          "reason": "Add IP ownership clause per requirement 1.2",
+          "requirement_source": "1.2 All intellectual property created during the engagement shall be owned by the Client"
+        },
+        {
+          "change_number": 3,
+          "section": "New section or appropriate location",
+          "old_text": "[Insert]",
+          "new_text": "The contractor is required to maintain all records for a minimum of seven years",
+          "reason": "Add record retention requirement per requirement 1.3",
+          "requirement_source": "1.3 The contractor is required to maintain all records for a minimum of seven years"
+        },
+        {
+          "change_number": 4,
+          "section": "2. DELIVERABLES",
+          "old_text": "Documentation may be provided if requested",
+          "new_text": "The service provider shall provide monthly status reports",
+          "reason": "Change to monthly (vs weekly in case_01) per requirement 2.2",
+          "requirement_source": "2.2 The service provider shall provide monthly status reports"
+        },
+        {
+          "change_number": 5,
+          "section": "2. DELIVERABLES",
+          "old_text": "Quality standards will be maintained",
+          "new_text": "Quality assurance testing is required for all software deliverables",
+          "reason": "Add QA testing requirement per requirement 2.3",
+          "requirement_source": "2.3 Quality assurance testing is required for all software deliverables"
+        },
+        {
+          "change_number": 6,
+          "section": "2. DELIVERABLES",
+          "old_text": "The Contractor will deliver work products as agreed",
+          "new_text": "All deliverables must be completed according to the project timeline",
+          "reason": "Strengthen timeline requirement per requirement 2.1",
+          "requirement_source": "2.1 All deliverables must be completed according to the project timeline"
+        },
+        {
+          "change_number": 7,
+          "section": "3. CONFIDENTIALITY",
+          "old_text": "Information can be shared with authorized personnel",
+          "new_text": "Disclosure of confidential information is prohibited except as specifically authorized",
+          "reason": "Add strict disclosure prohibition per requirement 3.1",
+          "requirement_source": "3.1 Disclosure of confidential information is prohibited except as specifically authorized"
+        },
+        {
+          "change_number": 8,
+          "section": "New section or 1. GENERAL PROVISIONS",
+          "old_text": "[Insert]",
+          "new_text": "The contractor must not engage in any activities that create a conflict of interest",
+          "reason": "Add conflict of interest prohibition per requirement 3.2",
+          "requirement_source": "3.2 The contractor must not engage in any activities that create a conflict of interest"
+        },
+        {
+          "change_number": 9,
+          "section": "1. GENERAL PROVISIONS",
+          "old_text": "The Contractor may use subcontractors at their discretion",
+          "new_text": "Subcontracting of core services is not permitted without written consent",
+          "reason": "Add subcontracting restriction per requirement 3.3",
+          "requirement_source": "3.3 Subcontracting of core services is not permitted without written consent"
+        }
+      ],
+      "notes": "Expected changes are preliminary - some requirements may need to be inserted as new sections rather than replacements. The system will be tested on its ability to handle requirements that don't have direct corresponding text in the input document."
+    }
+  ],
+
+  "test_configuration": {
+    "author_name": "AI Assistant",
+    "case_sensitive": true,
+    "add_comments": true,
+    "debug_mode": true,
+    "extended_debug_mode": true,
+    "merge_strategy": "append"
+  },
+
+  "validation_criteria": {
+    "minimum_changes_required": 8,
+    "maximum_acceptable_missed_changes": 3,
+    "all_requirements_addressed": false,
+    "no_formatting_corruption": true,
+    "tracked_changes_valid": true,
+    "no_false_positives": true,
+    "success_threshold": 0.70,
+    "notes": "Lower threshold because some requirements may not have matching text in input doc (e.g., insurance, IP ownership)"
+  },
+
+  "known_issues": [
+    "Some requirements (insurance, IP) have no corresponding text in input - system must decide where to insert",
+    "Record retention requirement is completely new - may not be applied",
+    "System may struggle with requirements that need new sections vs. text replacements"
+  ],
+
+  "notes": "This test case evaluates the system's ability to handle complex requirements that go beyond simple text replacements. It tests whether the system can recognize when requirements need to be inserted as new content rather than replacing existing text. This is more challenging than case_01.",
+
+  "baseline_results": {
+    "date": "TBD",
+    "changes_applied": null,
+    "changes_missed": null,
+    "success_rate": null
+  }
+}

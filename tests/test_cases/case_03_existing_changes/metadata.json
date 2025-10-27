@@ -1,0 +1,133 @@
+{
+  "test_case_id": "case_03",
+  "description": "Processing document that already contains tracked changes - verify new changes are added without removing originals",
+  "type": "text_prompt",
+  "created_date": "2025-10-27",
+  "status": "active",
+  "priority": "high",
+  "tags": ["tracked_changes", "iterative_editing", "multi_author"],
+
+  "input_files": [
+    {
+      "filename": "case_03_input_with_existing_changes.docx",
+      "original_source": "archive/debug_word_processor/sample_input.docx",
+      "description": "Simple document with 8 existing tracked changes already present",
+      "word_count": 73,
+      "paragraph_count": 11,
+      "has_tracked_changes": true,
+      "existing_tracked_changes": 8,
+      "content_summary": "Simple test document with existing tracked changes including: number changes ($10 → different amount), counting sequence changes, sentence additions, and text modifications. Used for testing preservation of existing changes."
+    }
+  ],
+
+  "fallback_files": [],
+
+  "prompt_files": [
+    {
+      "filename": "case_03_prompt_additional_edits.txt",
+      "description": "Text prompt with additional edit instructions",
+      "status": "TBD - needs to be created",
+      "suggested_content": "Please make the following additional changes:\n1. Change 'simple file' to 'test document'\n2. Change 'program can work' to 'system functions correctly'\n3. Add 'successfully' before 'change this sentence'\n4. Change the count sequence to go to 15 instead of 10"
+    }
+  ],
+
+  "expected_files": [
+    {
+      "filename": "case_03_expected_combined_changes.docx",
+      "description": "Document with BOTH original 8 tracked changes AND new changes from prompt",
+      "expected_changes_count": 12,
+      "original_changes_count": 8,
+      "new_changes_count": 4,
+      "status": "TBD - needs to be created by user",
+      "expected_changes": [
+        {
+          "change_number": 1,
+          "type": "original",
+          "description": "Original insertion of '1' (should be preserved)"
+        },
+        {
+          "change_number": 2,
+          "type": "original",
+          "description": "Original deletion of '0' (should be preserved)"
+        },
+        {
+          "change_number": 3,
+          "type": "original",
+          "description": "Original sentence insertion (should be preserved)"
+        },
+        {
+          "change_number": 4,
+          "type": "original",
+          "description": "Remaining 5 original changes (should be preserved)"
+        },
+        {
+          "change_number": 9,
+          "type": "new",
+          "old_text": "simple file",
+          "new_text": "test document",
+          "reason": "Per prompt instruction 1"
+        },
+        {
+          "change_number": 10,
+          "type": "new",
+          "old_text": "program can work",
+          "new_text": "system functions correctly",
+          "reason": "Per prompt instruction 2"
+        },
+        {
+          "change_number": 11,
+          "type": "new",
+          "old_text": "change this",
+          "new_text": "successfully change this",
+          "reason": "Per prompt instruction 3"
+        },
+        {
+          "change_number": 12,
+          "type": "new",
+          "old_text": "10",
+          "new_text": "15",
+          "reason": "Per prompt instruction 4 (in counting sequence)"
+        }
+      ]
+    }
+  ],
+
+  "test_configuration": {
+    "author_name": "AI Assistant",
+    "case_sensitive": true,
+    "add_comments": true,
+    "debug_mode": true,
+    "extended_debug_mode": true,
+    "merge_strategy": "append"
+  },
+
+  "validation_criteria": {
+    "minimum_changes_required": 4,
+    "original_changes_preserved": 8,
+    "total_expected_changes": 12,
+    "no_formatting_corruption": true,
+    "tracked_changes_valid": true,
+    "no_false_positives": true,
+    "no_original_changes_lost": true,
+    "success_threshold": 0.90,
+    "critical_requirement": "All 8 original tracked changes MUST be preserved - this is the primary test criteria"
+  },
+
+  "known_issues": [
+    "System must not accidentally accept/reject existing tracked changes",
+    "May be confusion between existing changes and new changes in same area",
+    "Need to verify XML integrity when adding new changes to document with existing changes"
+  ],
+
+  "notes": "CRITICAL TEST CASE: This validates that the system can handle iterative editing scenarios where a document already has tracked changes from previous reviews. The most important criterion is that NO original tracked changes are lost. This mimics real-world usage where documents go through multiple review cycles.",
+
+  "baseline_results": {
+    "date": "TBD",
+    "changes_applied": null,
+    "changes_missed": null,
+    "original_changes_preserved": null,
+    "success_rate": null
+  },
+
+  "special_instructions": "Before running this test, use the backend's /analyze-document/ endpoint to extract and document the exact 8 original tracked changes, so we can verify they're preserved after processing."
+}

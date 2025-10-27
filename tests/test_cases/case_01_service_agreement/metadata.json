@@ -1,0 +1,165 @@
+{
+  "test_case_id": "case_01",
+  "description": "Service agreement language tightening - Replace vague terms with specific requirements",
+  "type": "fallback_document",
+  "created_date": "2025-10-27",
+  "status": "active",
+  "priority": "high",
+  "tags": ["legal", "contract", "requirements", "mandatory_language"],
+
+  "input_files": [
+    {
+      "filename": "case_01_input_service_agreement.docx",
+      "original_source": "tests/fixtures/test_main_document.docx",
+      "description": "Basic service agreement with vague, flexible language that needs to be made specific and legally binding",
+      "word_count": 115,
+      "paragraph_count": 9,
+      "has_tracked_changes": false,
+      "content_summary": "Generic service agreement with 4 sections: General Provisions, Deliverables, Confidentiality, and Termination. Uses weak language like 'should', 'may', 'can be negotiated'."
+    }
+  ],
+
+  "fallback_files": [
+    {
+      "filename": "case_01_fallback_requirements.docx",
+      "original_source": "tests/fixtures/test_fallback_requirements.docx",
+      "description": "Mandatory requirements document specifying what must/shall/required language to add",
+      "word_count": 180,
+      "paragraph_count": 13,
+      "requirement_keywords": {
+        "must": 5,
+        "shall": 2,
+        "required": 1,
+        "prohibited": 2
+      },
+      "content_summary": "Requirements document with 3 sections: Mandatory Requirements (deadlines, approvals, reporting), Prohibited Activities (subcontracting, confidentiality breaches), and Additional Requirements (standards, payment, dispute resolution)."
+    }
+  ],
+
+  "prompt_files": [],
+
+  "expected_files": [
+    {
+      "filename": "case_01_expected_changes.docx",
+      "description": "Service agreement with tracked changes applied based on fallback requirements",
+      "expected_changes_count": 10,
+      "status": "TBD - needs to be created by user",
+      "expected_changes": [
+        {
+          "change_number": 1,
+          "section": "1. GENERAL PROVISIONS",
+          "old_text": "should be completed in a reasonable timeframe",
+          "new_text": "must be completed within 30 business days of project start",
+          "reason": "Add specific deadline per requirement 1.1",
+          "requirement_source": "1.1 The Contractor must complete all work within 30 business days"
+        },
+        {
+          "change_number": 2,
+          "section": "1. GENERAL PROVISIONS",
+          "old_text": "The Contractor may use subcontractors at their discretion",
+          "new_text": "Subcontracting is prohibited without prior written approval from the Client",
+          "reason": "Enforce subcontracting restriction per requirement 2.1",
+          "requirement_source": "2.1 Subcontracting is prohibited without prior written approval"
+        },
+        {
+          "change_number": 3,
+          "section": "1. GENERAL PROVISIONS",
+          "old_text": "Payment terms are flexible and can be negotiated",
+          "new_text": "Payment shall be made within 15 days of invoice submission",
+          "reason": "Add specific payment terms per requirement 3.2",
+          "requirement_source": "3.2 Payment shall be made within 15 days of invoice submission"
+        },
+        {
+          "change_number": 4,
+          "section": "2. DELIVERABLES",
+          "old_text": "The Contractor will deliver work products as agreed",
+          "new_text": "All deliverables shall be reviewed and approved by the Client before final acceptance",
+          "reason": "Add approval process per requirement 1.2",
+          "requirement_source": "1.2 All deliverables shall be reviewed and approved by the Client"
+        },
+        {
+          "change_number": 5,
+          "section": "2. DELIVERABLES",
+          "old_text": "Quality standards will be maintained",
+          "new_text": "All work must meet industry best practices and professional standards",
+          "reason": "Strengthen quality requirement per requirement 3.1",
+          "requirement_source": "3.1 All work must meet industry best practices"
+        },
+        {
+          "change_number": 6,
+          "section": "2. DELIVERABLES",
+          "old_text": "Documentation may be provided if requested",
+          "new_text": "The Contractor is required to provide weekly progress reports to the Client",
+          "reason": "Add reporting requirement per requirement 1.3",
+          "requirement_source": "1.3 The Contractor is required to provide weekly progress reports"
+        },
+        {
+          "change_number": 7,
+          "section": "3. CONFIDENTIALITY",
+          "old_text": "Both parties should maintain confidentiality of sensitive information",
+          "new_text": "Both parties must maintain confidentiality of sensitive information",
+          "reason": "Strengthen confidentiality language",
+          "requirement_source": "2.2 The Contractor must not share confidential information"
+        },
+        {
+          "change_number": 8,
+          "section": "3. CONFIDENTIALITY",
+          "old_text": "Information can be shared with authorized personnel",
+          "new_text": "Information must not be shared with unauthorized parties",
+          "reason": "Add prohibition on unauthorized sharing per requirement 2.2",
+          "requirement_source": "2.2 The Contractor must not share confidential information with unauthorized parties"
+        },
+        {
+          "change_number": 9,
+          "section": "3. CONFIDENTIALITY",
+          "old_text": "Confidential data will be protected as appropriate",
+          "new_text": "Confidential data must be protected according to industry standards",
+          "reason": "Strengthen data protection language",
+          "requirement_source": "General confidentiality requirements"
+        },
+        {
+          "change_number": 10,
+          "section": "4. TERMINATION",
+          "old_text": "Either party may terminate this agreement with notice",
+          "new_text": "The agreement must include a clause for dispute resolution through mediation before termination",
+          "reason": "Add dispute resolution requirement per requirement 3.3",
+          "requirement_source": "3.3 The agreement must include a clause for dispute resolution through mediation"
+        }
+      ]
+    }
+  ],
+
+  "test_configuration": {
+    "author_name": "AI Assistant",
+    "case_sensitive": true,
+    "add_comments": true,
+    "debug_mode": true,
+    "extended_debug_mode": true,
+    "merge_strategy": "append"
+  },
+
+  "validation_criteria": {
+    "minimum_changes_required": 8,
+    "maximum_acceptable_missed_changes": 2,
+    "all_requirements_addressed": true,
+    "no_formatting_corruption": true,
+    "tracked_changes_valid": true,
+    "no_false_positives": true,
+    "success_threshold": 0.80
+  },
+
+  "known_issues": [
+    "System may struggle with matching 'can be negotiated' phrase",
+    "Might miss changes that span multiple words or sentences",
+    "May have difficulty with context-dependent replacements"
+  ],
+
+  "notes": "This is the primary test case for basic fallback document processing. It tests the system's ability to extract requirements from a fallback document and apply them as tracked changes to a vague contract. Expected to be challenging due to the need for contextual understanding of where requirements should be applied.",
+
+  "baseline_results": {
+    "date": "TBD",
+    "changes_applied": null,
+    "changes_missed": null,
+    "success_rate": null
+  }
+}
