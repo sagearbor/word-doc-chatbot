@@ -819,38 +819,59 @@ def extract_conditional_instructions_with_llm(fallback_doc_path: str, context: s
         full_content = extract_document_with_comments_and_changes(fallback_doc_path)
         
         print("🔍 Extracting conditional analysis instructions from fallback document...")
-        
-        # Specialized prompt for extracting conditional analysis instructions
-        prompt = f"""You are a legal document analysis expert. Your task is to analyze this fallback document and create specific analysis instructions that will be used to examine a main document.
 
-FALLBACK DOCUMENT CONTENT:
-{full_content}
+        # HYPOTHESIS 2 TEST: Simplified Prompt
+        # Testing if a simpler, shorter prompt gets any response from LLM
 
-TASK:
-Extract all conditional rules, requirements, and analysis instructions from this fallback document. Focus on:
+        # Original complex prompt (saved for reference):
+        # prompt = f"""You are a legal document analysis expert. Your task is to analyze this fallback document and create specific analysis instructions that will be used to examine a main document.
+        #
+        # FALLBACK DOCUMENT CONTENT:
+        # {full_content}
+        #
+        # TASK:
+        # Extract all conditional rules, requirements, and analysis instructions from this fallback document. Focus on:
+        #
+        # 1. **Conditional Requirements**: Look for "if...then" statements, conditions that trigger changes
+        # 2. **Analysis Instructions**: Directions about what to look for in documents
+        # 3. **Specific Changes**: Exact text replacements or additions required
+        # 4. **Comments and Tracked Changes**: Pay special attention to comments that provide guidance
+        #
+        # OUTPUT FORMAT:
+        # Create analysis instructions that can be used to examine the main document. Format as numbered instructions:
+        #
+        # Example:
+        # 1. Check if the term "affiliate" appears in the Study Site's legal entity name. If so, determine the legal relationship and change to "Affiliate" with definition: [definition text]
+        # 2. Look for payment terms and change from flexible language to "Payment shall be made within 15 days"
+        # 3. Review confidentiality clauses and strengthen language from "sensitive information" to "all confidential data"
+        #
+        # IMPORTANT:
+        # - Be specific about what to look for and what changes to make
+        # - Include exact replacement text when provided
+        # - Preserve conditional logic ("if...then" statements)
+        # - Include any definitions or additional text to be added
+        # - Focus on actionable instructions that can be applied to analyze another document
+        #
+        # Return only the numbered analysis instructions, nothing else.
+        # """
 
-1. **Conditional Requirements**: Look for "if...then" statements, conditions that trigger changes
-2. **Analysis Instructions**: Directions about what to look for in documents
-3. **Specific Changes**: Exact text replacements or additions required
-4. **Comments and Tracked Changes**: Pay special attention to comments that provide guidance
+        # SIMPLE PROMPT (Hypothesis 2):
+        content_preview = full_content[:1000] if len(full_content) > 1000 else full_content
 
-OUTPUT FORMAT:
-Create analysis instructions that can be used to examine the main document. Format as numbered instructions:
+        prompt = f"""Read this fallback document and extract all requirements as numbered instructions.
 
-Example:
-1. Check if the term "affiliate" appears in the Study Site's legal entity name. If so, determine the legal relationship and change to "Affiliate" with definition: [definition text]
-2. Look for payment terms and change from flexible language to "Payment shall be made within 15 days"
-3. Review confidentiality clauses and strengthen language from "sensitive information" to "all confidential data"
+Fallback document (first 1000 chars):
+{content_preview}
 
-IMPORTANT:
-- Be specific about what to look for and what changes to make
-- Include exact replacement text when provided
-- Preserve conditional logic ("if...then" statements)
-- Include any definitions or additional text to be added
-- Focus on actionable instructions that can be applied to analyze another document
+Return only numbered instructions (e.g., "1. Change X to Y"), nothing else."""
 
-Return only the numbered analysis instructions, nothing else.
-"""
+        print("=" * 80)
+        print("HYPOTHESIS 2: SIMPLE PROMPT TEST")
+        print("=" * 80)
+        print(f"Prompt length: {len(prompt)} characters")
+        print(f"Content length: {len(content_preview)} characters (full was {len(full_content)})")
+        print(f"Using first 1000 chars of document only")
+        print("=" * 80)
 
         # Send to LLM for analysis
         llm_response = get_llm_analysis(prompt, "")
@@ -877,16 +898,22 @@ def get_llm_analysis(prompt: str, content: str) -> str:
     Send content to LLM for analysis
     """
     try:
-        from .ai_client import get_chat_response
-        
+        # Try relative import first, then absolute import (for standalone scripts)
+        try:
+            from .ai_client import get_chat_response
+        except ImportError:
+            from ai_client import get_chat_response
+
         messages = [
             {"role": "system", "content": "You are an expert legal document analyst."},
             {"role": "user", "content": f"{prompt}\n\nDocument content:\n{content}"}
         ]
-        
-        return get_chat_response(messages, temperature=0.0, seed=42, max_tokens=2000)
+
+        return get_chat_response(messages, temperature=0.0, seed=42, max_tokens=16000)
     except Exception as e:
         print(f"Error in LLM analysis: {e}")
+        import traceback
+        traceback.print_exc()
         return "{}"
 
 def parse_llm_requirements_response(llm_response: str) -> List[LegalRequirement]:

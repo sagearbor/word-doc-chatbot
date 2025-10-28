@@ -573,6 +573,95 @@ def _apply_markup_to_span(
     return True
 
 
+def find_all_specific_text_occurrences(
+    specific_text: str,
+    paragraph_text: str,
+    case_sensitive: bool
+) -> List[Dict[str, Any]]:
+    """
+    Find all occurrences of specific_text in paragraph_text.
+
+    Returns:
+        List of dicts with 'start' and 'end' positions for each match
+    """
+    search_text = paragraph_text if case_sensitive else paragraph_text.lower()
+    search_target = specific_text if case_sensitive else specific_text.lower()
+
+    occurrences = []
+    try:
+        for match in re.finditer(re.escape(search_target), search_text):
+            occurrences.append({
+                "start": match.start(),
+                "end": match.end(),
+                "text": paragraph_text[match.start():match.end()]
+            })
+    except re.error:
+        # Handle regex errors
+        return []
+
+    return occurrences
+
+
+def find_best_match_using_context(
+    occurrences: List[Dict[str, Any]],
+    contextual_old_text: str,
+    paragraph_text: str,
+    case_sensitive: bool
+) -> Optional[Dict[str, Any]]:
+    """
+    When multiple specific_text matches exist, use context to pick the best one.
+
+    Strategy:
+    1. Check if any occurrence's surrounding text matches contextual_old_text exactly
+    2. If not, use fuzzy matching to find the occurrence with best context match
+    3. Return the occurrence with highest context similarity score
+
+    Args:
+        occurrences: List of specific_text match positions
+        contextual_old_text: The full context string from LLM
+        paragraph_text: The full paragraph text
+        case_sensitive: Whether to use case-sensitive matching
+
+    Returns:
+        Best matching occurrence dict, or None if no good match found
+    """
+    search_para = paragraph_text if case_sensitive else paragraph_text.lower()
+    search_context = contextual_old_text if case_sensitive else contextual_old_text.lower()
+
+    best_match = None
+    best_score = 0.0
+
+    for occurrence in occurrences:
+        # Extract surrounding context for this occurrence
+        # Use a window of ±100 characters (or length of contextual_old_text, whichever is larger)
+        window_size = max(100, len(contextual_old_text))
+
+        start_window = max(0, occurrence['start'] - window_size)
+        end_window = min(len(paragraph_text), occurrence['end'] + window_size)
+
+        surrounding_text = paragraph_text[start_window:end_window]
+        search_surrounding = surrounding_text if case_sensitive else surrounding_text.lower()
+
+        # Method 1: Exact context match
+        if search_context in search_surrounding:
+            # Found exact context match - this is the winner
+            return occurrence
+
+        # Method 2: Fuzzy context match
+        # Calculate similarity between contextual_old_text and surrounding text
+        similarity = SequenceMatcher(None, search_context, search_surrounding).ratio()
+
+        if similarity > best_score:
+            best_score = similarity
+            best_match = occurrence
+
+    # Return best match if similarity is above threshold (0.7)
+    if best_score >= 0.7:
+        return best_match
+
+    return None
+
+
 def replace_text_in_paragraph_with_tracked_change(
         doc, current_para_idx: int, paragraph,
         contextual_old_text_llm, specific_old_text_llm, specific_new_text,
@@ -602,46 +691,100 @@ def replace_text_in_paragraph_with_tracked_change(
     search_text_in_doc = visible_paragraph_text_original_case if case_sensitive_flag else visible_paragraph_text_original_case.lower()
     search_context_from_llm_processed = contextual_old_text_llm if case_sensitive_flag else contextual_old_text_llm.lower()
     log_debug(f"P{current_para_idx+1}: Current visible paragraph text (len {len(visible_paragraph_text_original_case)}): '{visible_paragraph_text_original_case[:60]}{'...' if len(visible_paragraph_text_original_case)>60 else ''}'")
-    occurrences_of_context = []
-    try:
-        for match in re.finditer(re.escape(search_context_from_llm_processed), search_text_in_doc):
-            occurrences_of_context.append({"start": match.start(), "end": match.end(), "text": visible_paragraph_text_original_case[match.start():match.end()]})
-    except re.error as e:
-        ambiguous_or_failed_changes_log.append({"paragraph_index": current_para_idx, "issue": f"Regex error searching for context: {e}", **edit_details_for_log});
-        return "REGEX_ERROR_IN_CONTEXT_SEARCH", None
-    if not occurrences_of_context:
-        log_debug(f"P{current_para_idx+1}: LLM Context '{contextual_old_text_llm[:30]}...' not found in paragraph text.");
-        return "CONTEXT_NOT_FOUND", None
-    if len(occurrences_of_context) > 1:
-        log_debug(f"P{current_para_idx+1}: LLM Context '{contextual_old_text_llm[:30]}...' is AMBIGUOUS ({len(occurrences_of_context)} found in paragraph).")
-        return "CONTEXT_AMBIGUOUS", occurrences_of_context
-    unique_context_match_info = occurrences_of_context[0]
-    actual_context_found_in_doc_str = unique_context_match_info["text"]
-    prefix_display = visible_paragraph_text_original_case[max(0, unique_context_match_info['start']-10) : unique_context_match_info['start']]
-    suffix_display = visible_paragraph_text_original_case[unique_context_match_info['end'] : min(len(visible_paragraph_text_original_case), unique_context_match_info['end']+10)]
-    log_debug(f"P{current_para_idx+1}: Unique LLM context found: '...{prefix_display}[{actual_context_found_in_doc_str}]{suffix_display}...' at {unique_context_match_info['start']}-{unique_context_match_info['end']}")
-    text_to_search_specific_within = actual_context_found_in_doc_str if case_sensitive_flag else actual_context_found_in_doc_str.lower()
+
+    # NEW APPROACH: Find specific_old_text FIRST (Specific Text Priority)
     specific_text_to_find_llm_processed = specific_old_text_llm if case_sensitive_flag else specific_old_text_llm.lower()
-    try:
-        specific_start_in_context = text_to_search_specific_within.index(specific_text_to_find_llm_processed)
-        actual_specific_old_text_to_delete = actual_context_found_in_doc_str[specific_start_in_context : specific_start_in_context + len(specific_old_text_llm)]
-        fuzzy_match_used = False
-        fuzzy_similarity = 1.0
-    except ValueError:
-        # Try fuzzy matching as fallback
-        fuzzy_match = fuzzy_search_best_match(specific_text_to_find_llm_processed, text_to_search_specific_within)
-        if fuzzy_match:
-            specific_start_in_context = fuzzy_match['start']
+    log_debug(f"P{current_para_idx+1}: Searching for specific_old_text: '{specific_old_text_llm}'")
+
+    specific_occurrences = find_all_specific_text_occurrences(
+        specific_old_text_llm,
+        visible_paragraph_text_original_case,
+        case_sensitive_flag
+    )
+
+    fuzzy_match_used = False
+    fuzzy_similarity = 1.0
+    global_specific_start_offset = -1
+    global_specific_end_offset = -1
+    actual_specific_old_text_to_delete = ""
+
+    if len(specific_occurrences) == 0:
+        # No exact match - try fuzzy matching
+        log_debug(f"P{current_para_idx+1}: Specific text '{specific_old_text_llm}' not found. Trying fuzzy match...")
+
+        fuzzy_match = fuzzy_search_best_match(
+            specific_text_to_find_llm_processed,
+            search_text_in_doc
+        )
+
+        if fuzzy_match and fuzzy_match['similarity'] >= FUZZY_MATCHING_THRESHOLD:
+            # Found fuzzy match - use it
+            global_specific_start_offset = fuzzy_match['start']
+            global_specific_end_offset = fuzzy_match['end']
             actual_specific_old_text_to_delete = fuzzy_match['matched_text']
             fuzzy_match_used = True
             fuzzy_similarity = fuzzy_match['similarity']
-            log_debug(f"P{current_para_idx+1}: Exact match failed, using fuzzy match: '{actual_specific_old_text_to_delete}' (similarity: {fuzzy_similarity:.2f})")
+
+            log_debug(f"P{current_para_idx+1}: Fuzzy match found: '{actual_specific_old_text_to_delete}' "
+                      f"(similarity: {fuzzy_similarity:.2f})")
         else:
-            log_debug(f"P{current_para_idx+1}: Specific text '{specific_old_text_llm}' NOT FOUND within the unique context '{actual_context_found_in_doc_str}'. Change skipped.")
-            ambiguous_or_failed_changes_log.append({"paragraph_index": current_para_idx, "issue": "Specific text not found within unique context (exact or fuzzy).", **edit_details_for_log});
-            return "SPECIFIC_TEXT_NOT_IN_CONTEXT", None
-    global_specific_start_offset = unique_context_match_info['start'] + specific_start_in_context
-    global_specific_end_offset = global_specific_start_offset + len(actual_specific_old_text_to_delete)
+            # No match found (exact or fuzzy)
+            log_debug(f"P{current_para_idx+1}: Specific text '{specific_old_text_llm}' NOT FOUND "
+                      f"(exact or fuzzy). Change skipped.")
+            ambiguous_or_failed_changes_log.append({
+                "paragraph_index": current_para_idx,
+                "issue": "Specific text not found in paragraph (tried exact and fuzzy matching).",
+                **edit_details_for_log
+            })
+            return "SPECIFIC_TEXT_NOT_FOUND", None
+
+    elif len(specific_occurrences) == 1:
+        # UNIQUE MATCH - Apply immediately without context check
+        unique_occurrence = specific_occurrences[0]
+        global_specific_start_offset = unique_occurrence['start']
+        global_specific_end_offset = unique_occurrence['end']
+        actual_specific_old_text_to_delete = unique_occurrence['text']
+        fuzzy_match_used = False
+        fuzzy_similarity = 1.0
+
+        log_debug(f"P{current_para_idx+1}: Unique specific text match found at "
+                  f"{global_specific_start_offset}-{global_specific_end_offset}. "
+                  f"Applying change WITHOUT context validation.")
+
+        # Skip context check entirely - proceed directly to boundary validation
+
+    else:  # len(specific_occurrences) > 1
+        # MULTIPLE MATCHES - Use context to disambiguate
+        log_debug(f"P{current_para_idx+1}: Found {len(specific_occurrences)} occurrences of "
+                  f"'{specific_old_text_llm}'. Using context to disambiguate...")
+
+        best_match = find_best_match_using_context(
+            specific_occurrences,
+            contextual_old_text_llm,
+            visible_paragraph_text_original_case,
+            case_sensitive_flag
+        )
+
+        if best_match:
+            # Found best match using context
+            global_specific_start_offset = best_match['start']
+            global_specific_end_offset = best_match['end']
+            actual_specific_old_text_to_delete = best_match['text']
+            fuzzy_match_used = False
+            fuzzy_similarity = 1.0
+
+            log_debug(f"P{current_para_idx+1}: Disambiguated using context. Selected match at "
+                      f"{global_specific_start_offset}-{global_specific_end_offset}")
+        else:
+            # Context didn't help - can't disambiguate
+            log_debug(f"P{current_para_idx+1}: Multiple matches found but context-based disambiguation failed. "
+                      f"Marking as ambiguous.")
+
+            # Return ambiguous status with all occurrences for orange highlighting
+            return "CONTEXT_AMBIGUOUS", specific_occurrences
+
+    # Continue with boundary validation and XML manipulation
+    # (global_specific_start_offset and global_specific_end_offset are now set)
     log_debug(f"P{current_para_idx+1}: LLM specific_old_text: '{specific_old_text_llm}' (len {len(specific_old_text_llm)})")
     log_debug(f"P{current_para_idx+1}: Actual specific_old_text_to_delete (from doc): '{actual_specific_old_text_to_delete}' (len {len(actual_specific_old_text_to_delete)})")
     log_debug(f"P{current_para_idx+1}: Global offsets for specific text: {global_specific_start_offset}-{global_specific_end_offset}")

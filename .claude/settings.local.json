@@ -9,7 +9,11 @@
       "Bash(chmod:*)",
       "Bash(ls:*)",
       "Bash(find:*)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Read(//dcri/sasusers/home/scb2/**)",
+      "Bash(tree:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
     ],
     "deny": []
   }
