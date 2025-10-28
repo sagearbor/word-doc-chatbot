@@ -41,6 +41,7 @@ env.bak/
 venv.bak/
 
 # Unit test / coverage reports
+tests/golden_dataset/dcri_examples  #sensitive info
 htmlcov/
 .tox/
 .nox/

@@ -47,7 +47,7 @@ def test_case_01():
             }
 
             print("\n🔄 Processing document...")
-            response = requests.post(f"{BASE_URL}/process-document-with-fallback/", files=files, data=data, timeout=120)
+            response = requests.post(f"{BASE_URL}/process-document-with-fallback/", files=files, data=data, timeout=300)
 
         if response.status_code == 200:
             result = response.json()
@@ -133,7 +133,7 @@ def test_case_02():
             }
 
             print("\n🔄 Processing document...")
-            response = requests.post(f"{BASE_URL}/process-document-with-fallback/", files=files, data=data, timeout=120)
+            response = requests.post(f"{BASE_URL}/process-document-with-fallback/", files=files, data=data, timeout=300)
 
         if response.status_code == 200:
             result = response.json()
@@ -219,10 +219,10 @@ def test_case_03():
     try:
         with open(input_file, 'rb') as f_input:
             files = {
-                'input_file': (input_file.name, f_input, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+                'file': (input_file.name, f_input, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')
             }
             data = {
-                'user_instructions': user_instructions,
+                'instructions': user_instructions,
                 'author_name': 'AI Assistant',
                 'case_sensitive': 'true',
                 'add_comments': 'true',
@@ -231,7 +231,7 @@ def test_case_03():
             }
 
             print("\n🔄 Processing document with prompt...")
-            response = requests.post(f"{BASE_URL}/process-document/", files=files, data=data, timeout=120)
+            response = requests.post(f"{BASE_URL}/process-document/", files=files, data=data, timeout=300)
 
         if response.status_code == 200:
             result = response.json()

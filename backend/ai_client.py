@@ -126,9 +126,61 @@ class UnifiedAIClient:
 
         try:
             print(f"[AI_CLIENT_DEBUG] Params to litellm.completion (chat_completion): {params}") # DEBUG
+
+            # HYPOTHESIS 1: Log the raw response object
+            print("[HYPOTHESIS_1] About to call litellm.completion()...")
             response = litellm.completion(**params)
+
+            print(f"[HYPOTHESIS_1] litellm.completion() returned")
+            print(f"[HYPOTHESIS_1] Response object type: {type(response)}")
+            print(f"[HYPOTHESIS_1] Response has choices: {hasattr(response, 'choices')}")
+
+            if hasattr(response, 'choices'):
+                print(f"[HYPOTHESIS_1] Number of choices: {len(response.choices)}")
+                if len(response.choices) > 0:
+                    print(f"[HYPOTHESIS_1] First choice type: {type(response.choices[0])}")
+                    print(f"[HYPOTHESIS_1] First choice has message: {hasattr(response.choices[0], 'message')}")
+
+                    if hasattr(response.choices[0], 'message'):
+                        message = response.choices[0].message
+                        print(f"[HYPOTHESIS_1] Message type: {type(message)}")
+                        print(f"[HYPOTHESIS_1] Message has content: {hasattr(message, 'content')}")
+
+                        if hasattr(message, 'content'):
+                            content = message.content
+                            print(f"[HYPOTHESIS_1] Content type: {type(content)}")
+                            print(f"[HYPOTHESIS_1] Content length: {len(content) if content else 0}")
+                            print(f"[HYPOTHESIS_1] Content is None: {content is None}")
+                            print(f"[HYPOTHESIS_1] Content first 200 chars: {content[:200] if content else 'None'}")
+                        else:
+                            print(f"[HYPOTHESIS_1] Message object has no 'content' attribute")
+                            print(f"[HYPOTHESIS_1] Message attributes: {dir(message)}")
+                else:
+                    print(f"[HYPOTHESIS_1] Choices list is empty")
+            else:
+                print(f"[HYPOTHESIS_1] Response object has no 'choices' attribute")
+                print(f"[HYPOTHESIS_1] Response attributes: {dir(response)}")
+
+            # Log full response object to file
+            log_path = "/tmp/litellm_raw_response.txt"
+            with open(log_path, 'w') as f:
+                f.write("LITELLM RAW RESPONSE OBJECT:\n")
+                f.write(f"Type: {type(response)}\n")
+                f.write(f"Repr: {repr(response)}\n")
+                f.write(f"Dir: {dir(response)}\n")
+                if hasattr(response, 'choices') and len(response.choices) > 0:
+                    f.write(f"\nFirst choice: {response.choices[0]}\n")
+                    if hasattr(response.choices[0], 'message'):
+                        f.write(f"Message: {response.choices[0].message}\n")
+                        if hasattr(response.choices[0].message, 'content'):
+                            f.write(f"Content: {response.choices[0].message.content}\n")
+            print(f"[HYPOTHESIS_1] Raw response logged to {log_path}")
+
             return response.choices[0].message.content
         except Exception as e:
+            print(f"[HYPOTHESIS_1] EXCEPTION in litellm.completion(): {type(e).__name__}: {e}")
+            import traceback
+            print(f"[HYPOTHESIS_1] Traceback:\n{traceback.format_exc()}")
             raise Exception(f"Error calling {self.provider} API: {str(e)}")
 
 # Convenience functions
