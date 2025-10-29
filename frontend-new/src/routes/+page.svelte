@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import Header from '$lib/components/core/Header.svelte';
+	import Navbar from '$lib/components/core/Navbar.svelte';
 	import Sidebar from '$lib/components/core/Sidebar.svelte';
 	import { ToastContainer } from '$lib/components/shared';
 	import {
@@ -35,6 +35,7 @@
 		triggerDownload
 	} from '$lib/api';
 	import type { ProcessingOptions } from '$lib/types/api';
+	import { ArrowRight, Sparkles, Settings } from 'lucide-svelte';
 
 	// Reactive store access - use $storeName syntax directly in templates
 	// No $derived needed - Svelte 5 auto-tracks store subscriptions
@@ -244,25 +245,16 @@
 <ToastContainer />
 
 <div class="flex flex-col h-screen overflow-hidden">
-	<Header title="Word Document Tracked Changes Assistant" onMenuToggle={toggleSidebar} />
+	<Navbar title="Word Document Assistant" onMenuToggle={toggleSidebar} />
 
 	<div class="flex flex-1 overflow-hidden">
 		<Sidebar {isMobile} isOpen={isMobile ? sidebarOpen : true} onClose={closeSidebar}>
-			<div class="space-y-6">
-				<!-- File Upload Section -->
-				<section>
-					<h3 class="text-sm font-semibold text-gray-900 dark:text-gray-50 uppercase tracking-wider mb-3">
-						Main Document
-					</h3>
-					<FileUpload
-						label="Upload Document"
-						accept=".docx"
-						required={true}
-						onfileselected={handleFileSelected}
-						onfileremoved={handleFileRemoved}
-						onfileerror={handleFileError}
-					/>
-				</section>
+			<div class="space-y-4">
+				<!-- Advanced Options Header -->
+				<div class="flex items-center gap-2 text-gray-700 dark:text-gray-300 mb-2">
+					<Settings class="w-5 h-5" />
+					<h2 class="text-lg font-semibold">Advanced Options</h2>
+				</div>
 
 				<Divider />
 
@@ -270,7 +262,7 @@
 				<section>
 					<div class="flex items-center justify-between mb-3">
 						<h3 class="text-sm font-semibold text-gray-900 dark:text-gray-50 uppercase tracking-wider">
-							Advanced Options
+							Fallback Document
 						</h3>
 						<label class="flex items-center gap-2 cursor-pointer">
 							<input
@@ -279,7 +271,7 @@
 								onchange={() => uiStore.toggleFallbackMode()}
 								class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
 							/>
-							<span class="text-sm">Use Fallback Document</span>
+							<span class="text-sm">Enable</span>
 						</label>
 					</div>
 
@@ -291,28 +283,13 @@
 								<button
 									type="button"
 									onclick={handleAnalyzeFallback}
-									class="w-full px-4 py-2 text-sm font-medium text-blue-700 bg-blue-50 border border-blue-300 rounded-lg hover:bg-blue-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+									class="w-full px-4 py-2 text-sm font-medium text-blue-700 bg-blue-50 border border-blue-300 rounded-lg hover:bg-blue-100 dark:text-blue-300 dark:bg-blue-900/30 dark:border-blue-700 dark:hover:bg-blue-900/50 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
 								>
 									Analyze Fallback
 								</button>
 							{/if}
 						</div>
 					{/if}
-				</section>
-
-				<Divider />
-
-				<!-- Instructions Section -->
-				<section>
-					<h3 class="text-sm font-semibold text-gray-900 dark:text-gray-50 uppercase tracking-wider mb-3">
-						Instructions
-					</h3>
-					<InstructionsInput
-						value={$appStore.instructions}
-						placeholder="Enter your editing instructions here..."
-						rows={6}
-						oninput={handleInstructionsChange}
-					/>
 				</section>
 
 				<Divider />
@@ -330,7 +307,7 @@
 				<!-- Debug Options -->
 				<section>
 					<h3 class="text-sm font-semibold text-gray-900 dark:text-gray-50 uppercase tracking-wider mb-3">
-						Debug Mode
+						Debug Level
 					</h3>
 					<DebugOptions debugLevel={$uiStore.debugLevel} onchange={(level) => uiStore.setDebugLevel(level)} />
 				</section>
@@ -340,23 +317,20 @@
 				<!-- Analysis Mode -->
 				<section>
 					<h3 class="text-sm font-semibold text-gray-900 dark:text-gray-50 uppercase tracking-wider mb-3">
-						Analysis Mode
+						Analysis Options
 					</h3>
 					<AnalysisMode value={$uiStore.analysisMode} onchange={(mode) => uiStore.setAnalysisMode(mode)} />
-				</section>
 
-				<Divider />
-
-				<!-- Action Buttons -->
-				<section class="space-y-3">
-					<ProcessButton loading={$appStore.isProcessing} disabled={!$isValid || $appStore.isProcessing} onclick={handleProcess} />
-					<AnalyzeButton loading={$appStore.isAnalyzing} disabled={!$appStore.uploadedFile || $appStore.isAnalyzing} onclick={handleAnalyze} />
+					<div class="mt-3">
+						<AnalyzeButton loading={$appStore.isAnalyzing} disabled={!$appStore.uploadedFile || $appStore.isAnalyzing} onclick={handleAnalyze} />
+					</div>
 				</section>
 
 				<!-- LLM Config (Advanced) -->
 				{#if $resultsStore.llmConfig}
-					<details class="mt-6">
-						<summary class="text-sm font-semibold text-gray-900 dark:text-gray-50 uppercase tracking-wider cursor-pointer">
+					<Divider />
+					<details class="mt-4">
+						<summary class="text-sm font-semibold text-gray-900 dark:text-gray-50 uppercase tracking-wider cursor-pointer hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
 							LLM Configuration
 						</summary>
 						<div class="mt-3">
@@ -368,86 +342,218 @@
 		</Sidebar>
 
 		<!-- Main Content -->
-		<main class="flex-1 overflow-y-auto bg-gray-100 dark:bg-gray-800 p-4 sm:p-6 lg:p-8">
-			<div class="max-w-7xl mx-auto space-y-6">
-				<!-- Welcome / Status -->
-				{#if !$resultsStore.processedResult && !$resultsStore.analysisResult && !$appStore.isProcessing && !$appStore.isAnalyzing}
-					<Card elevated={false} padding="lg">
-						<h2 class="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-gray-50 mb-4">
-							Welcome to Word Document Assistant
-						</h2>
-						<p class="text-gray-600 dark:text-gray-300 text-lg mb-4">
-							Upload a Word document (.docx) and provide instructions to apply AI-suggested edits with tracked changes.
+		<main class="flex-1 overflow-y-auto bg-gray-50 dark:bg-gray-900">
+			<!-- Hero Section (before processing) -->
+			{#if !$resultsStore.processedResult && !$resultsStore.analysisResult && !$appStore.isProcessing && !$appStore.isAnalyzing}
+				<div class="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12">
+					<!-- Hero Header -->
+					<div class="text-center mb-8 sm:mb-12">
+						<div class="inline-flex items-center justify-center w-16 h-16 rounded-full bg-blue-100 dark:bg-blue-900/30 mb-4">
+							<Sparkles class="w-8 h-8 text-blue-600 dark:text-blue-400" />
+						</div>
+						<h1 class="text-3xl sm:text-4xl lg:text-5xl font-bold text-gray-900 dark:text-gray-50 mb-4">
+							AI-Powered Document Editing
+						</h1>
+						<p class="text-lg sm:text-xl text-gray-600 dark:text-gray-300 max-w-2xl mx-auto">
+							Upload your Word document and let AI suggest professional edits with tracked changes
 						</p>
-						<ul class="list-disc list-inside text-gray-600 dark:text-gray-300 space-y-2">
-							<li>Upload your main Word document</li>
-							<li>Optionally use a fallback document with requirements or tracked changes</li>
-							<li>Provide clear editing instructions</li>
-							<li>Configure processing options and debug level</li>
-							<li>Click "Process Document" or "Analyze Document"</li>
-						</ul>
-					</Card>
-				{/if}
+					</div>
 
-				<!-- Processing Indicator -->
-				{#if $appStore.isProcessing}
-					<Card elevated={true} padding="lg">
-						<div class="flex flex-col items-center justify-center py-8">
-							<LoadingSpinner size="lg" message="Processing document..." />
+					<!-- Main Upload Card -->
+					<Card elevated={true} padding="xl">
+						<div class="space-y-6">
+							<!-- Step 1: Upload -->
+							<div>
+								<div class="flex items-center gap-2 mb-3">
+									<div class="flex items-center justify-center w-8 h-8 rounded-full bg-blue-600 text-white text-sm font-bold">
+										1
+									</div>
+									<h2 class="text-xl font-semibold text-gray-900 dark:text-gray-50">
+										Upload Your Document
+									</h2>
+								</div>
+								<FileUpload
+									label="Main Document"
+									accept=".docx"
+									required={true}
+									onfileselected={handleFileSelected}
+									onfileremoved={handleFileRemoved}
+									onfileerror={handleFileError}
+								/>
+							</div>
+
+							<Divider />
+
+							<!-- Step 2: Instructions -->
+							<div>
+								<div class="flex items-center gap-2 mb-3">
+									<div class="flex items-center justify-center w-8 h-8 rounded-full bg-blue-600 text-white text-sm font-bold">
+										2
+									</div>
+									<h2 class="text-xl font-semibold text-gray-900 dark:text-gray-50">
+										Provide Instructions
+									</h2>
+								</div>
+								<InstructionsInput
+									value={$appStore.instructions}
+									placeholder="Enter your editing instructions here... (e.g., 'Make the tone more formal', 'Fix grammar and spelling', 'Simplify technical jargon')"
+									rows={6}
+									oninput={handleInstructionsChange}
+								/>
+							</div>
+
+							<Divider />
+
+							<!-- Step 3: Process -->
+							<div>
+								<div class="flex items-center gap-2 mb-4">
+									<div class="flex items-center justify-center w-8 h-8 rounded-full bg-blue-600 text-white text-sm font-bold">
+										3
+									</div>
+									<h2 class="text-xl font-semibold text-gray-900 dark:text-gray-50">
+										Process Document
+									</h2>
+								</div>
+								<ProcessButton
+									loading={$appStore.isProcessing}
+									disabled={!$isValid || $appStore.isProcessing}
+									onclick={handleProcess}
+								/>
+
+								{#if $appStore.uploadedFile}
+									<p class="mt-3 text-sm text-center text-gray-600 dark:text-gray-400">
+										Press <kbd class="px-2 py-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded text-xs font-mono shadow-sm">Ctrl+Enter</kbd>
+										to process quickly
+									</p>
+								{/if}
+							</div>
 						</div>
 					</Card>
-				{/if}
 
-				<!-- Analysis Indicator -->
-				{#if $appStore.isAnalyzing}
-					<Card elevated={true} padding="lg">
+					<!-- Quick Tips -->
+					<div class="mt-8 grid sm:grid-cols-2 gap-4">
+						<div class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+							<h3 class="font-semibold text-blue-900 dark:text-blue-200 mb-2">
+								Need more control?
+							</h3>
+							<p class="text-sm text-blue-800 dark:text-blue-300">
+								Use the sidebar to configure fallback documents, processing options, and debug settings
+							</p>
+						</div>
+						<div class="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4">
+							<h3 class="font-semibold text-green-900 dark:text-green-200 mb-2">
+								How does it work?
+							</h3>
+							<p class="text-sm text-green-800 dark:text-green-300">
+								Visit the <a href="/about" class="underline hover:text-green-600">About page</a> to see the complete data flow diagram
+							</p>
+						</div>
+					</div>
+				</div>
+			{/if}
+
+			<!-- Processing Indicator -->
+			{#if $appStore.isProcessing}
+				<div class="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+					<Card elevated={true} padding="xl">
+						<div class="flex flex-col items-center justify-center py-8">
+							<LoadingSpinner size="lg" message="Processing your document with AI..." />
+							<p class="mt-4 text-sm text-gray-600 dark:text-gray-400 text-center">
+								This may take a minute. We're analyzing the content and generating tracked changes.
+							</p>
+						</div>
+					</Card>
+				</div>
+			{/if}
+
+			<!-- Analysis Indicator -->
+			{#if $appStore.isAnalyzing}
+				<div class="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+					<Card elevated={true} padding="xl">
 						<div class="flex flex-col items-center justify-center py-8">
 							<LoadingSpinner size="lg" message="Analyzing document..." />
 						</div>
 					</Card>
-				{/if}
+				</div>
+			{/if}
 
-				<!-- Processing Results -->
-				{#if $resultsStore.processedResult && !$appStore.isProcessing}
-					<ResultsDisplay result={$resultsStore.processedResult} />
+			<!-- Results Section -->
+			{#if $resultsStore.processedResult || $resultsStore.analysisResult || $resultsStore.fallbackAnalysis}
+				<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
+					<!-- Processing Results -->
+					{#if $resultsStore.processedResult && !$appStore.isProcessing}
+						<ResultsDisplay result={$resultsStore.processedResult} />
 
-					{#if $resultsStore.processedResult.filename}
+						{#if $resultsStore.processedResult.filename}
+							<Card elevated={false} padding="lg">
+								<h3 class="text-lg font-semibold text-gray-900 dark:text-gray-50 mb-4">Download Processed Document</h3>
+								<DownloadButton filename={$resultsStore.processedResult.filename} disabled={false} onclick={handleDownload} />
+							</Card>
+						{/if}
+
+						{#if $resultsStore.processedResult.processing_log && $uiStore.showProcessingLog}
+							<ProcessingLog logContent={$resultsStore.processedResult.processing_log} expanded={true} />
+						{:else if $resultsStore.processedResult.processing_log}
+							<button
+								type="button"
+								onclick={() => uiStore.toggleProcessingLog()}
+								class="w-full px-4 py-2 text-sm font-medium text-gray-700 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 dark:text-gray-300 transition-colors"
+							>
+								Show Processing Log
+							</button>
+						{/if}
+
+						{#if $resultsStore.processedResult.debug_info && ($uiStore.debugLevel === 'standard' || $uiStore.debugLevel === 'extended')}
+							<DebugInfo debugInfo={$resultsStore.processedResult.debug_info} />
+						{/if}
+
+						<!-- Start New Button -->
+						<div class="flex justify-center pt-4">
+							<button
+								type="button"
+								onclick={() => {
+									resultsStore.clearProcessedResult();
+									resultsStore.clearAnalysisResult();
+									appStore.setFile(null);
+									appStore.setInstructions('');
+								}}
+								class="inline-flex items-center gap-2 px-6 py-3 text-base font-semibold text-blue-700 bg-blue-50 border-2 border-blue-300 rounded-lg hover:bg-blue-100 dark:text-blue-300 dark:bg-blue-900/30 dark:border-blue-700 dark:hover:bg-blue-900/50 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+							>
+								<ArrowRight class="w-5 h-5" />
+								Process Another Document
+							</button>
+						</div>
+					{/if}
+
+					<!-- Analysis Results -->
+					{#if $resultsStore.analysisResult && !$appStore.isAnalyzing}
 						<Card elevated={false} padding="lg">
-							<h3 class="text-lg font-semibold text-gray-900 dark:text-gray-50 mb-4">Download Processed Document</h3>
-							<DownloadButton filename={$resultsStore.processedResult.filename} disabled={false} onclick={handleDownload} />
+							<h3 class="text-lg font-semibold text-gray-900 dark:text-gray-50 mb-4">Analysis Results</h3>
+							<AnalysisResults analysisContent={$resultsStore.analysisResult.analysis} />
 						</Card>
+
+						<!-- Start New Button -->
+						<div class="flex justify-center pt-4">
+							<button
+								type="button"
+								onclick={() => {
+									resultsStore.clearAnalysisResult();
+									appStore.setFile(null);
+								}}
+								class="inline-flex items-center gap-2 px-6 py-3 text-base font-semibold text-blue-700 bg-blue-50 border-2 border-blue-300 rounded-lg hover:bg-blue-100 dark:text-blue-300 dark:bg-blue-900/30 dark:border-blue-700 dark:hover:bg-blue-900/50 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+							>
+								<ArrowRight class="w-5 h-5" />
+								Analyze Another Document
+							</button>
+						</div>
 					{/if}
 
-					{#if $resultsStore.processedResult.processing_log && $uiStore.showProcessingLog}
-						<ProcessingLog logContent={$resultsStore.processedResult.processing_log} expanded={true} />
-					{:else if $resultsStore.processedResult.processing_log}
-						<button
-							type="button"
-							onclick={() => uiStore.toggleProcessingLog()}
-							class="w-full px-4 py-2 text-sm font-medium text-gray-700 bg-transparent border border-gray-300 rounded-lg hover:bg-gray-50 dark:text-gray-300 dark:border-gray-600 dark:hover:bg-gray-700"
-						>
-							Show Processing Log
-						</button>
+					<!-- Fallback Analysis Results -->
+					{#if $resultsStore.fallbackAnalysis}
+						<FallbackAnalysis analysisData={$resultsStore.fallbackAnalysis} />
 					{/if}
-
-					{#if $resultsStore.processedResult.debug_info && ($uiStore.debugLevel === 'standard' || $uiStore.debugLevel === 'extended')}
-						<DebugInfo debugInfo={$resultsStore.processedResult.debug_info} />
-					{/if}
-				{/if}
-
-				<!-- Analysis Results -->
-				{#if $resultsStore.analysisResult && !$appStore.isAnalyzing}
-					<Card elevated={false} padding="lg">
-						<h3 class="text-lg font-semibold text-gray-900 dark:text-gray-50 mb-4">Analysis Results</h3>
-						<AnalysisResults analysisContent={$resultsStore.analysisResult.analysis} />
-					</Card>
-				{/if}
-
-				<!-- Fallback Analysis Results -->
-				{#if $resultsStore.fallbackAnalysis}
-					<FallbackAnalysis analysisData={$resultsStore.fallbackAnalysis} />
-				{/if}
-			</div>
+				</div>
+			{/if}
 		</main>
 	</div>
 </div>
@@ -474,5 +580,9 @@
 
 	main::-webkit-scrollbar-thumb:hover {
 		background-color: rgb(100 116 139);
+	}
+
+	kbd {
+		box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 	}
 </style>

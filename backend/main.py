@@ -1,5 +1,9 @@
 import os
-os.environ['LITELLM_LOG'] = 'DEBUG' 
+# SECURITY FIX: Removed LITELLM_LOG='DEBUG' to prevent API key leakage in logs
+# Only enable DEBUG logging in development environment via explicit environment variable
+if os.getenv("ENVIRONMENT") == "development" and os.getenv("ENABLE_LITELLM_DEBUG") == "true":
+    os.environ['LITELLM_LOG'] = 'DEBUG'
+    print("[WARNING] LiteLLM DEBUG logging enabled - API keys may appear in logs")
 import shutil
 import tempfile
 import uuid
@@ -20,8 +24,7 @@ from .llm_handler import (
     get_llm_analysis_from_summary,   # For Approach 1
     get_llm_analysis_from_raw_xml,   # For Approach 2
     get_llm_suggestions_with_fallback,  # Phase 2.2 Advanced Merging
-    get_merge_analysis,                 # Phase 2.2 Analysis
-    get_advanced_legal_instructions     # Phase 2.2 Instructions
+    get_merge_analysis                  # Phase 2.2 Analysis
 )
 from .word_processor import (
     process_document_with_edits,
@@ -36,15 +39,11 @@ from .word_processor import (
 from .legal_document_processor import (
     parse_legal_document,
     extract_fallback_requirements,
-    generate_instructions_from_fallback,
-    LegalDocumentStructure,
-    LegalRequirement
+    generate_instructions_from_fallback
 )
 from .requirements_processor import (
     process_fallback_document_requirements,
-    generate_enhanced_instructions,
-    RequirementsProcessor,
-    ProcessedRequirement
+    generate_enhanced_instructions
 )
 
 # Import Phase 4.1 workflow orchestrator

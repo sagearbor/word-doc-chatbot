@@ -17,8 +17,6 @@
 </script>
 
 <div class="options-panel">
-	<h3 class="text-sm font-semibold text-gray-700 mb-3">Processing Options</h3>
-
 	<div class="space-y-4">
 		<!-- Author Name -->
 		<div class="form-group">
@@ -74,49 +72,6 @@
 			</div>
 		</div>
 
-		<div class="divider" />
-
-		<!-- Debug Options -->
-		<div class="space-y-3">
-			<p class="text-xs font-semibold text-gray-600 uppercase tracking-wide">Debug Options</p>
-
-			<!-- Debug Mode -->
-			<div class="checkbox-group">
-				<input
-					id="debug-mode"
-					type="checkbox"
-					bind:checked={options.debugMode}
-					onchange={handleChange}
-					class="form-checkbox"
-					aria-label="Enable debug mode"
-				/>
-				<label for="debug-mode" class="checkbox-label">
-					<span class="font-medium">Debug Mode</span>
-					<span class="text-xs text-gray-500 block">Show processing details</span>
-				</label>
-			</div>
-
-			<!-- Extended Debug Mode -->
-			<div class="checkbox-group">
-				<input
-					id="extended-debug"
-					type="checkbox"
-					bind:checked={options.extendedDebugMode}
-					onchange={handleChange}
-					disabled={!options.debugMode}
-					class="form-checkbox"
-					aria-label="Enable extended debug mode"
-				/>
-				<label
-					for="extended-debug"
-					class="checkbox-label"
-					class:opacity-50={!options.debugMode}
-				>
-					<span class="font-medium">Extended Debug</span>
-					<span class="text-xs text-gray-500 block">Show verbose LLM details</span>
-				</label>
-			</div>
-		</div>
 	</div>
 </div>
 

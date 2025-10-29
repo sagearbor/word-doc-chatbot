@@ -1,10 +1,10 @@
 import os
-import os # Import os to set environment variables
 from typing import Optional, Dict, Any
 import litellm # Import the base module
 from .config import AIConfig
 
-os.environ['LITELLM_LOG'] = 'DEBUG' # Recommended way to enable LiteLLM debug logs
+# SECURITY FIX: Removed LITELLM_LOG='DEBUG' to prevent API key leakage in logs
+# Debug logging should be controlled by main.py based on ENVIRONMENT variable
 
 class UnifiedAIClient:
     """Unified client for multiple AI providers using LiteLLM."""

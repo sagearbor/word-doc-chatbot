@@ -1,0 +1,17 @@
+[
+  {
+    "test_case_id": "case_01",
+    "status": "error",
+    "error": "HTTPConnectionPool(host='127.0.0.1', port=8888): Max retries exceeded with url: /process-document-with-fallback/ (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x771447541b10>: Failed to establish a new connection: [Errno 111] Connection refused'))"
+  },
+  {
+    "test_case_id": "case_02",
+    "status": "error",
+    "error": "HTTPConnectionPool(host='127.0.0.1', port=8888): Max retries exceeded with url: /process-document-with-fallback/ (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x7714475a7f10>: Failed to establish a new connection: [Errno 111] Connection refused'))"
+  },
+  {
+    "test_case_id": "case_03",
+    "status": "error",
+    "error": "HTTPConnectionPool(host='127.0.0.1', port=8888): Max retries exceeded with url: /process-document/ (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x7714475d2c10>: Failed to establish a new connection: [Errno 111] Connection refused'))"
+  }
+]

@@ -1,0 +1,105 @@
+{
+  "last_updated": "2025-10-29T02:55:00Z",
+  "cleanup_session": {
+    "date": "2025-10-29",
+    "baseline_tests": {
+      "passed": 24,
+      "failed": 24,
+      "errors": 8
+    },
+    "final_tests": {
+      "passed": 27,
+      "failed": 24,
+      "errors": 8
+    },
+    "improvements": "Added 3 passing tests by moving test_hypothesis*.py files to tests/ directory"
+  },
+  "files": {
+    "backend/main.py": {
+      "last_reviewed": "2025-10-29T02:55:00Z",
+      "last_modified": "2025-10-29T02:50:00Z",
+      "issues_found": 2,
+      "issues_fixed": 2,
+      "issues_pending": 0,
+      "changes": [
+        "Removed unused import: LegalDocumentStructure",
+        "Removed unused import: LegalRequirement",
+        "Removed unused import: RequirementsProcessor",
+        "Removed unused import: ProcessedRequirement",
+        "Removed unused import: get_advanced_legal_instructions"
+      ],
+      "next_review_priority": "low"
+    },
+    "backend/word_processor.py": {
+      "last_reviewed": "2025-10-29T02:55:00Z",
+      "notes": "Core file with 5 backup versions removed",
+      "next_review_priority": "medium"
+    },
+    "backend/legal_document_processor.py": {
+      "last_reviewed": "2025-10-29T02:55:00Z",
+      "notes": "Complex legal processing logic - needs detailed review",
+      "next_review_priority": "high"
+    },
+    "backend/llm_handler.py": {
+      "last_reviewed": "2025-10-29T02:55:00Z",
+      "notes": "Multi-provider AI integration - needs careful review",
+      "next_review_priority": "high"
+    }
+  },
+  "organizational_changes": {
+    "documentation_moved": [
+      "APPROACH_1_SUMMARY.md -> docs/",
+      "DEPLOYMENT_STATUS.md -> docs/",
+      "DEPLOYMENT_SUMMARY.md -> docs/",
+      "DOCKER_SVELTEKIT.md -> docs/",
+      "MIGRATION_STATUS.md -> docs/"
+    ],
+    "test_files_moved": [
+      "test_hypothesis3.py -> tests/",
+      "test_hypothesis4_comparison.py -> tests/",
+      "test_hypothesis4_gpt4_model.py -> tests/"
+    ],
+    "debug_scripts_organized": [
+      "apply_simple_prompt.py -> tests/debug_scripts/",
+      "debug_case_02_llm_calls.py -> tests/debug_scripts/",
+      "debug_fallback.py -> tests/debug_scripts/",
+      "debug_full_parsing.py -> tests/debug_scripts/",
+      "fix_legal_processor.py -> tests/debug_scripts/",
+      "toggle_llm_mode.py -> tests/debug_scripts/",
+      "legal_document_processor_gpt4_test.py -> tests/debug_scripts/"
+    ],
+    "obsolete_files_archived": [
+      "Dockerfile -> archive/Dockerfile.streamlit (Streamlit-based, replaced by Dockerfile.sveltekit)",
+      "docker-compose.yml -> archive/ (3-container setup, replaced by single container)",
+      "nginx-helper.conf -> archive/ (Not needed with SvelteKit)",
+      "nginx-helper-docker.conf -> archive/ (Not needed with SvelteKit)"
+    ],
+    "backup_files_removed": [
+      "backend/word_processorBU01.py",
+      "backend/word_processorBU02.py",
+      "backend/word_processorBU04yChngs.py",
+      "backend/word_processorBU05x.py",
+      "backend/word_processor_BU03.py"
+    ]
+  },
+  "next_steps": [
+    "Review backend/legal_document_processor.py for complexity reduction",
+    "Review backend/llm_handler.py for duplicate code patterns",
+    "Review backend/instruction_merger.py for usage and relevance",
+    "Review backend/requirements_processor.py for usage and relevance",
+    "Review backend/legal_workflow_orchestrator.py for usage",
+    "Check frontend-new/ for unused Svelte components",
+    "Review tests for failing/error tests and determine if they test obsolete features"
+  ],
+  "rotation_schedule": [
+    "backend/legal_document_processor.py",
+    "backend/instruction_merger.py",
+    "backend/requirements_processor.py",
+    "backend/legal_workflow_orchestrator.py",
+    "backend/llm_handler.py",
+    "backend/ai_client.py",
+    "backend/config.py",
+    "frontend-new/src/lib/",
+    "tests/"
+  ]
+}
