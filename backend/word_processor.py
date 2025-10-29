@@ -311,8 +311,11 @@ def extract_tracked_changes_structured(input_docx_path: str, context_chars: int 
     tracked_changes = []
 
     for para_idx, paragraph in enumerate(doc.paragraphs):
-        # Build a map of the paragraph content to get context
-        para_text = paragraph.text
+        # CRITICAL: Must use _build_visible_text_map() for consistency with
+        # process_document_with_edits(). Using paragraph.text creates mismatch
+        # when documents contain tracked changes, causing CONTEXT_AMBIGUOUS failures.
+        # See: CONTEXT_AMBIGUOUS_ROOT_CAUSE_ANALYSIS.md
+        para_text, _ = _build_visible_text_map(paragraph)
 
         # Track position in paragraph for context extraction
         current_pos = 0
