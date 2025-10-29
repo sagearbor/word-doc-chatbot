@@ -75,9 +75,13 @@
 		toastStore.showToast(error, 'error');
 	}
 
-	function handleFallbackFileSelected(file: File) {
-		appStore.setFallbackFile(file);
-		toastStore.showToast(`Fallback file selected: ${file.name}`, 'info');
+	function handleFallbackFileSelected(file: File | null) {
+		if (file) {
+			appStore.setFallbackFile(file);
+			toastStore.showToast(`Fallback file selected: ${file.name}`, 'info');
+		} else {
+			appStore.setFallbackFile(null);
+		}
 	}
 
 	// Instructions handler
@@ -216,8 +220,8 @@
 	}
 
 	// Update LLM config
-	async function handleLLMConfigUpdate(config: { extractionMethod: string; instructionMethod: string }) {
-		const { extractionMethod, instructionMethod } = config;
+	async function handleLLMConfigUpdate(config: { extraction_method: string; instruction_method: string }) {
+		const { extraction_method: extractionMethod, instruction_method: instructionMethod } = config;
 		try {
 			const config = await setLLMConfig(extractionMethod, instructionMethod);
 			resultsStore.setLLMConfig(config);
@@ -282,7 +286,7 @@
 					{#if $uiStore.useFallbackMode}
 						<div class="space-y-4">
 							<FallbackUpload enabled={true} onfileselected={handleFallbackFileSelected} />
-							<MergeStrategy value={$uiStore.mergeStrategy} onchange={(e) => uiStore.setMergeStrategy(e.detail)} />
+							<MergeStrategy value={$uiStore.mergeStrategy} onchange={(value) => uiStore.setMergeStrategy(value)} />
 							{#if $appStore.fallbackFile}
 								<button
 									type="button"
@@ -328,7 +332,7 @@
 					<h3 class="text-sm font-semibold text-gray-900 dark:text-gray-50 uppercase tracking-wider mb-3">
 						Debug Mode
 					</h3>
-					<DebugOptions debugLevel={$uiStore.debugLevel} onchange={(e) => uiStore.setDebugLevel(e.detail)} />
+					<DebugOptions debugLevel={$uiStore.debugLevel} onchange={(level) => uiStore.setDebugLevel(level)} />
 				</section>
 
 				<Divider />
