@@ -12,6 +12,8 @@ from docx.oxml.ns import qn
 from typing import List, Dict, Tuple, Optional, Any
 from difflib import SequenceMatcher
 from dataclasses import dataclass
+# SECURITY: Prevent XXE (XML External Entity) attacks
+from defusedxml import ElementTree as DefusedET
 
 # --- Global Configuration Flags ---
 DEBUG_MODE = False
@@ -460,17 +462,33 @@ def convert_tracked_changes_to_edits(tracked_changes: List[TrackedChange]) -> Li
 
 def get_document_xml_raw_text(docx_path: str) -> str:
     """
-    Extracts the raw content of word/document.xml from a DOCX file.
+    Extracts the raw content of word/document.xml from a DOCX file with XXE protection.
     (For Approach 2: Raw XML to LLM)
+
+    SECURITY: Uses defusedxml to prevent XXE (XML External Entity) attacks.
     """
     try:
         with zipfile.ZipFile(docx_path, 'r') as docx_zip:
             if 'word/document.xml' in docx_zip.namelist():
                 with docx_zip.open('word/document.xml') as xml_file:
                     xml_content_bytes = xml_file.read()
+
+                    # SECURITY: Validate XML for XXE attacks before processing
+                    try:
+                        DefusedET.fromstring(
+                            xml_content_bytes,
+                            forbid_dtd=True,
+                            forbid_entities=True,
+                            forbid_external=True
+                        )
+                    except Exception as e:
+                        return f"Error_Security: Potentially malicious XML content detected: {str(e)}"
+
                     return xml_content_bytes.decode('utf-8', errors='ignore') # Ignore decoding errors for robustness
             else:
                 return "Error_Internal: word/document.xml not found in the DOCX archive."
+    except zipfile.BadZipFile:
+        return "Error_Internal: Invalid ZIP/DOCX file format."
     except Exception as e:
         return f"Error_Internal: Exception while processing DOCX to get raw XML: {str(e)}"
 

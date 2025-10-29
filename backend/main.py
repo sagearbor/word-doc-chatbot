@@ -7,16 +7,43 @@ if os.getenv("ENVIRONMENT") == "development" and os.getenv("ENABLE_LITELLM_DEBUG
 import shutil
 import tempfile
 import uuid
+import asyncio
 from typing import List, Dict, Optional
-import traceback 
+import traceback
 import json
 
-from fastapi import FastAPI, File, UploadFile, Form, HTTPException
+from fastapi import FastAPI, File, UploadFile, Form, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
+from fastapi.middleware.httpsredirect import HTTPSRedirectMiddleware
 # docx.Document is used by extract_text_for_llm if that's kept, and by word_processor
-from docx import Document 
+from docx import Document
+
+# SECURITY: Import rate limiting
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+
+# SECURITY: Import security modules
+from .file_validation import validate_docx_upload
+from .input_sanitization import (
+    sanitize_llm_input,
+    validate_user_instructions,
+    sanitize_filename
+)
+from .secure_downloads import (
+    register_download,
+    serve_download,
+    cleanup_expired_tokens
+)
+from .error_handling import (
+    handle_error,
+    handle_validation_error,
+    handle_not_found,
+    setup_secure_logging
+) 
 
 # Corrected imports based on new llm_handler and word_processor structure
 from .llm_handler import (
@@ -61,16 +88,81 @@ except ImportError as e:
 
 app = FastAPI(title="Word Document Processing API")
 
-# Add CORS middleware for development (allows SvelteKit dev server at localhost:5173)
-if os.getenv("ENVIRONMENT") == "development":
+# SECURITY: Initialize rate limiter
+limiter = Limiter(key_func=get_remote_address, default_limits=["200/hour"])
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# SECURITY: Setup secure logging
+setup_secure_logging()
+
+# SECURITY: Production security middleware
+if os.getenv("ENVIRONMENT") == "production":
+    # Enforce HTTPS in production
+    app.add_middleware(HTTPSRedirectMiddleware)
+    print("HTTPS redirect enabled for production")
+
+    # Trusted hosts
+    allowed_hosts = os.getenv("ALLOWED_HOSTS", "").split(",")
+    if allowed_hosts and allowed_hosts[0]:  # Check it's not empty string
+        app.add_middleware(TrustedHostMiddleware, allowed_hosts=allowed_hosts)
+        print(f"Trusted hosts configured: {allowed_hosts}")
+
+# SECURITY: Hardened CORS configuration
+DEVELOPMENT_ORIGINS = ["http://localhost:5173", "http://localhost:5174"]
+PRODUCTION_ORIGINS = os.getenv("ALLOWED_ORIGINS", "").split(",") if os.getenv("ALLOWED_ORIGINS") else []
+ALLOWED_ORIGINS = DEVELOPMENT_ORIGINS if os.getenv("ENVIRONMENT") == "development" else PRODUCTION_ORIGINS
+
+if ALLOWED_ORIGINS and ALLOWED_ORIGINS[0]:  # Check it's not empty
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["http://localhost:5173"],  # SvelteKit dev server
+        allow_origins=ALLOWED_ORIGINS,
         allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_methods=["GET", "POST"],  # Only needed methods
+        allow_headers=["Content-Type", "Authorization"],  # Only needed headers
+        max_age=3600,  # Cache preflight for 1 hour
     )
-    print("CORS middleware enabled for development environment")
+    print(f"CORS enabled for origins: {ALLOWED_ORIGINS}")
+else:
+    print("CORS disabled - no allowed origins configured")
+
+
+# SECURITY: Add security headers middleware
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    """Add security headers to all responses."""
+    response = await call_next(request)
+
+    # Prevent MIME type sniffing
+    response.headers["X-Content-Type-Options"] = "nosniff"
+
+    # Prevent clickjacking
+    response.headers["X-Frame-Options"] = "DENY"
+
+    # XSS Protection (legacy browsers)
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+
+    # HSTS (if HTTPS)
+    if request.url.scheme == "https":
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+
+    # Content Security Policy
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline'; "
+        "style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data:; "
+        "font-src 'self' data:; "
+        "connect-src 'self'"
+    )
+
+    # Referrer Policy
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+
+    # Permissions Policy
+    response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+
+    return response
 
 # Ensure TEMP_DIR_ROOT is defined at the module level
 TEMP_DIR_ROOT = tempfile.mkdtemp(prefix="wordapp_root_")
@@ -297,19 +389,29 @@ async def process_document(
             except Exception as e_clean_in: print(f"Error cleaning up input file {input_path}: {e_clean_in}")
 
 
-@app.get("/download/{filename}")
-async def download_file_presumably_from_temp_dir(filename: str):
-    # ... (keep existing /download/ endpoint logic) ...
-    if ".." in filename or filename.startswith("/") or filename.startswith("\\"):
-        raise HTTPException(status_code=400, detail="Invalid filename.")
-    file_path = os.path.join(TEMP_DIR_ROOT, filename)
-    if not os.path.isfile(file_path): 
-        print(f"Download request for non-existent or non-file path: {file_path}")
-        raise HTTPException(status_code=404, detail="File not found or is not accessible.")
-    return FileResponse(file_path, filename=filename, media_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+@app.get("/download/{download_token}")
+@limiter.limit("50/hour")  # Rate limit for downloads
+async def download_file(request: Request, download_token: str):
+    """
+    SECURITY: Secure download endpoint with token-based access.
+    Replaces the previous insecure endpoint that exposed filenames in URLs.
+    """
+    return await serve_download(download_token)
+
+@app.on_event("startup")
+async def start_token_cleanup():
+    """SECURITY: Start background task to cleanup expired download tokens."""
+    async def cleanup_loop():
+        while True:
+            await asyncio.sleep(300)  # Every 5 minutes
+            cleanup_expired_tokens()
+
+    asyncio.create_task(cleanup_loop())
+    print("Token cleanup task started")
+
 
 @app.on_event("shutdown")
-def cleanup_temp_dir(): 
+def cleanup_temp_dir():
     # ... (keep existing shutdown event logic) ...
     print(f"Attempting to clean up temporary directory: {TEMP_DIR_ROOT}")
     try:
