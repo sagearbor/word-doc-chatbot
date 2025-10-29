@@ -1,18 +1,3 @@
-import sys
-import types
-
-# Provide a minimal dotenv stub if the package is missing
-if 'dotenv' not in sys.modules:
-    sys.modules['dotenv'] = types.SimpleNamespace(load_dotenv=lambda *a, **k: None)
-
-# Provide a minimal openai stub if the package is missing
-if 'openai' not in sys.modules:
-    class DummyOpenAI:
-        def __init__(self, *a, **k):
-            pass
-
-    sys.modules['openai'] = types.SimpleNamespace(OpenAI=DummyOpenAI)
-
 from backend.llm_handler import _parse_llm_response
 
 

@@ -42,6 +42,7 @@ venv.bak/
 
 # Unit test / coverage reports
 tests/golden_dataset/dcri_examples  #sensitive info
+tests/logs/  # Test reports and verification results
 htmlcov/
 .tox/
 .nox/
@@ -60,6 +61,7 @@ cover/
 .ipynb_checkpoints/
 
 # Frontend (React/Node.js)
+node_modules/  # Root-level node_modules (e.g., from Playwright)
 frontend/node_modules/
 frontend/dist/
 frontend/build/

@@ -277,13 +277,14 @@ async def process_document(
 
         return JSONResponse(
             content={
-                "processed_filename": os.path.basename(output_path),
-                "download_url": f"/download/{os.path.basename(output_path)}", 
-                "log_content": log_content_for_response, # This should now always be a non-None string
-                "status_message": final_status_message,
-                "issues_count": len(log_details_returned) if log_details_returned else 0, 
-                "edits_applied_count": processed_edits_count,
-                "edits_suggested_count": total_suggested_edits
+                "filename": os.path.basename(output_path),
+                "status": "success",
+                "message": final_status_message,
+                "download_url": f"/download/{os.path.basename(output_path)}",
+                "processing_log": log_content_for_response, # This should now always be a non-None string
+                "edits_suggested": total_suggested_edits,
+                "edits_applied": processed_edits_count,
+                "issues_count": len(log_details_returned) if log_details_returned else 0
             }
         )
 
@@ -752,13 +753,14 @@ async def process_document_with_fallback(
                 }
         
         response_content = {
-            "processed_filename": os.path.basename(output_path),
+            "filename": os.path.basename(output_path),
+            "status": "success",
+            "message": status_message,
             "download_url": f"/download/{os.path.basename(output_path)}",
-            "log_content": log_content_for_response,
-            "status_message": status_message,
+            "processing_log": log_content_for_response,
+            "edits_suggested": total_suggested_edits,
+            "edits_applied": processed_edits_count,
             "issues_count": len(log_details_returned) if log_details_returned else 0,
-            "edits_applied_count": processed_edits_count,
-            "edits_suggested_count": total_suggested_edits,
             "fallback_filename": fallback_filename,
             "merge_strategy": merge_strategy,
             "processing_method": "Phase 2.2 Advanced Merging" if "Phase 2.2" in log_content_for_response else "Phase 2.1 Enhanced Instructions"
@@ -933,9 +935,10 @@ async def process_legal_document_endpoint(
         # Prepare response
         response_data = {
             "workflow_id": workflow_result.workflow_id,
-            "processed_filename": workflow_result.processed_filename,
+            "filename": workflow_result.processed_filename,
+            "status": "success",
+            "message": workflow_result.status_message,
             "download_url": f"/download/{workflow_result.processed_filename}",
-            "status_message": workflow_result.status_message,
             "overall_status": workflow_result.overall_status.value,
             "processing_duration_seconds": workflow_result.total_duration_seconds,
             

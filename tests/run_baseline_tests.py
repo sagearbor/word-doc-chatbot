@@ -15,8 +15,12 @@ sys.path.insert(0, str(Path(__file__).parent.parent / 'backend'))
 
 from word_processor import extract_tracked_changes_structured
 
-BASE_URL = "http://127.0.0.1:8888"
+BASE_URL = "http://127.0.0.1:3004"
 TEST_CASES_DIR = Path(__file__).parent / "test_cases"
+
+# Create session that bypasses environment proxy settings
+session = requests.Session()
+session.trust_env = False  # Don't use HTTP_PROXY, HTTPS_PROXY environment variables
 
 def test_case_01():
     """Test Case 01: Service Agreement Tightening"""
@@ -47,15 +51,15 @@ def test_case_01():
             }
 
             print("\n🔄 Processing document...")
-            response = requests.post(f"{BASE_URL}/process-document-with-fallback/", files=files, data=data, timeout=300)
+            response = session.post(f"{BASE_URL}/process-document-with-fallback/", files=files, data=data, timeout=300)
 
         if response.status_code == 200:
             result = response.json()
             print(f"\n✅ Processing successful!")
-            print(f"   Status: {result.get('status_message', 'N/A')}")
-            print(f"   Edits suggested: {result.get('edits_suggested_count', 0)}")
-            print(f"   Edits applied: {result.get('edits_applied_count', 0)}")
-            print(f"   Edits failed: {result.get('edits_failed_count', 0)}")
+            print(f"   Status: {result.get('message', 'N/A')}")
+            print(f"   Edits suggested: {result.get('edits_suggested', 0)}")
+            print(f"   Edits applied: {result.get('edits_applied', 0)}")
+            print(f"   Edits failed: {result.get('edits_suggested', 0) - result.get('edits_applied', 0)}")
 
             # Save output file
             if 'processed_file' in result:
@@ -75,7 +79,7 @@ def test_case_01():
 
             # Compare against expected (10 changes)
             expected_count = 10
-            actual_count = result.get('edits_applied_count', 0)
+            actual_count = result.get('edits_applied', 0)
             success_rate = actual_count / expected_count if expected_count > 0 else 0
 
             print(f"\n📈 RESULTS:")
@@ -133,15 +137,15 @@ def test_case_02():
             }
 
             print("\n🔄 Processing document...")
-            response = requests.post(f"{BASE_URL}/process-document-with-fallback/", files=files, data=data, timeout=300)
+            response = session.post(f"{BASE_URL}/process-document-with-fallback/", files=files, data=data, timeout=300)
 
         if response.status_code == 200:
             result = response.json()
             print(f"\n✅ Processing successful!")
-            print(f"   Status: {result.get('status_message', 'N/A')}")
-            print(f"   Edits suggested: {result.get('edits_suggested_count', 0)}")
-            print(f"   Edits applied: {result.get('edits_applied_count', 0)}")
-            print(f"   Edits failed: {result.get('edits_failed_count', 0)}")
+            print(f"   Status: {result.get('message', 'N/A')}")
+            print(f"   Edits suggested: {result.get('edits_suggested', 0)}")
+            print(f"   Edits applied: {result.get('edits_applied', 0)}")
+            print(f"   Edits failed: {result.get('edits_suggested', 0) - result.get('edits_applied', 0)}")
 
             # Save output file
             if 'processed_file' in result:
@@ -160,7 +164,7 @@ def test_case_02():
                     print(f"   ... and {len(changes) - 5} more")
 
             expected_count = 9
-            actual_count = result.get('edits_applied_count', 0)
+            actual_count = result.get('edits_applied', 0)
             success_rate = actual_count / expected_count if expected_count > 0 else 0
 
             print(f"\n📈 RESULTS:")
@@ -231,7 +235,7 @@ def test_case_03():
             }
 
             print("\n🔄 Processing document with prompt...")
-            response = requests.post(f"{BASE_URL}/process-document/", files=files, data=data, timeout=300)
+            response = session.post(f"{BASE_URL}/process-document/", files=files, data=data, timeout=300)
 
         if response.status_code == 200:
             result = response.json()
