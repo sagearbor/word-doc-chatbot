@@ -529,7 +529,7 @@ def _add_comment_to_paragraph(doc, paragraph, current_para_idx: int, comment_tex
 
 
 def _apply_markup_to_span(
-        paragraph_obj, current_para_idx: int, global_start: int, global_end: int, text_to_markup: str,
+        doc, paragraph_obj, current_para_idx: int, global_start: int, global_end: int, text_to_markup: str,
         highlight_color: str, comment_text: str, author_name: str,
         initial_fallback_style_run: Optional[OxmlElement],
         ambiguous_or_failed_changes_log: List[Dict], edit_item_details: Dict
@@ -696,18 +696,28 @@ def replace_text_in_paragraph_with_tracked_change(
         log_debug(f"P{current_para_idx+1}: Full LLM Context: '{contextual_old_text_llm}'")
         log_debug(f"P{current_para_idx+1}: Full LLM Specific Old: '{specific_old_text_llm}'")
     log_debug(f"P{current_para_idx+1}: Attempting change '{specific_old_text_llm}' to '{specific_new_text}' within LLM context '{contextual_old_text_llm[:30]}...'")
+
+    # FIX: Capture visible text snapshot BEFORE any processing
+    # This will be used in error logs to show the paragraph state at processing time
     visible_paragraph_text_original_case, elements_map = _build_visible_text_map(paragraph)
+    visible_text_snapshot_for_logging = visible_paragraph_text_original_case[:100]
+
     if DEBUG_MODE or EXTENDED_DEBUG_MODE:
         pass  # Debug output disabled
+
+    # FIX: Create edit_details_for_log with visible_text_snippet captured BEFORE any modifications
+    # This ensures logs show the actual text state when processing this edit
     edit_details_for_log = {
         "contextual_old_text": contextual_old_text_llm,
         "specific_old_text": specific_old_text_llm,
         "specific_new_text": specific_new_text,
         "llm_reason": reason_for_change,
-        "visible_text_snippet": visible_paragraph_text_original_case[:100]
+        "visible_text_snippet": visible_text_snapshot_for_logging
     }
     if not visible_paragraph_text_original_case and (contextual_old_text_llm or specific_old_text_llm):
         log_debug(f"P{current_para_idx+1}: Paragraph is empty or yields no visible text, but an edit was provided. Skipping.");
+        # FIX: Update visible_text_snippet even for empty paragraph case
+        edit_details_for_log["visible_text_snippet"] = "EMPTY_PARAGRAPH"
         return "CONTEXT_NOT_FOUND", None
     search_text_in_doc = visible_paragraph_text_original_case if case_sensitive_flag else visible_paragraph_text_original_case.lower()
     search_context_from_llm_processed = contextual_old_text_llm if case_sensitive_flag else contextual_old_text_llm.lower()
@@ -752,6 +762,9 @@ def replace_text_in_paragraph_with_tracked_change(
             # No match found (exact or fuzzy)
             log_debug(f"P{current_para_idx+1}: Specific text '{specific_old_text_llm}' NOT FOUND "
                       f"(exact or fuzzy). Change skipped.")
+            # FIX: Re-capture visible text at time of logging for accurate context
+            current_visible_text_for_log, _ = _build_visible_text_map(paragraph)
+            edit_details_for_log["visible_text_snippet"] = current_visible_text_for_log[:100]
             ambiguous_or_failed_changes_log.append({
                 "paragraph_index": current_para_idx,
                 "issue": "Specific text not found in paragraph (tried exact and fuzzy matching).",
@@ -801,6 +814,10 @@ def replace_text_in_paragraph_with_tracked_change(
             log_debug(f"P{current_para_idx+1}: Multiple matches found but context-based disambiguation failed. "
                       f"Marking as ambiguous.")
 
+            # FIX: Re-capture visible text at time of logging for accurate context
+            current_visible_text_for_log, _ = _build_visible_text_map(paragraph)
+            edit_details_for_log["visible_text_snippet"] = current_visible_text_for_log[:100]
+
             # Return ambiguous status with all occurrences for orange highlighting
             return "CONTEXT_AMBIGUOUS", specific_occurrences
 
@@ -811,6 +828,9 @@ def replace_text_in_paragraph_with_tracked_change(
     log_debug(f"P{current_para_idx+1}: Global offsets for specific text: {global_specific_start_offset}-{global_specific_end_offset}")
     if len(actual_specific_old_text_to_delete) != len(specific_old_text_llm):
         log_debug(f"P{current_para_idx+1}: CRITICAL WARNING! Length mismatch between LLM specific_old_text ('{specific_old_text_llm}') and actual text found in doc to delete ('{actual_specific_old_text_to_delete}'). This will likely cause incorrect changes.")
+        # FIX: Re-capture visible text at time of logging for accurate context
+        current_visible_text_for_log, _ = _build_visible_text_map(paragraph)
+        edit_details_for_log["visible_text_snippet"] = current_visible_text_for_log[:100]
         ambiguous_or_failed_changes_log.append({"paragraph_index": current_para_idx, "issue": "Length mismatch between LLM specific_old_text and actual text to delete.", "type":"CriticalWarning", **edit_details_for_log})
     char_before_specific = visible_paragraph_text_original_case[global_specific_start_offset - 1] if global_specific_start_offset > 0 else None
     char_after_specific = visible_paragraph_text_original_case[global_specific_end_offset] if global_specific_end_offset < len(visible_paragraph_text_original_case) else None
@@ -829,6 +849,9 @@ def replace_text_in_paragraph_with_tracked_change(
         match_info = f" (fuzzy match, similarity: {fuzzy_similarity:.2f})" if fuzzy_match_used else ""
         log_message = (f"P{current_para_idx+1}: Specific text '{actual_specific_old_text_to_delete}' is NOT validly bounded{match_info}. " f"Preceded by: '{char_before_specific}', Followed by: '{char_after_specific}'. Change skipped.")
         log_debug(log_message)
+        # FIX: Re-capture visible text at time of logging for accurate context
+        current_visible_text_for_log, _ = _build_visible_text_map(paragraph)
+        edit_details_for_log["visible_text_snippet"] = current_visible_text_for_log[:100]
         ambiguous_or_failed_changes_log.append({"paragraph_index": current_para_idx, "issue": f"Skipped: Specific text not validly bounded (Prev: '{char_before_specific}', Next: '{char_after_specific}') [{boundary_type} match]", **edit_details_for_log})
         return "SKIPPED_INVALID_BOUNDARY", None
     
@@ -845,6 +868,9 @@ def replace_text_in_paragraph_with_tracked_change(
                 first_involved_r_element_for_style = _get_element_style_template_run(item_map_entry['el'], None)
     if not involved_element_infos:
         log_debug(f"P{current_para_idx+1}: XML_MAPPING_FAILED for '{actual_specific_old_text_to_delete}'. No XML elements correspond to the identified text span.")
+        # FIX: Re-capture visible text at time of logging for accurate context
+        current_visible_text_for_log, _ = _build_visible_text_map(paragraph)
+        edit_details_for_log["visible_text_snippet"] = current_visible_text_for_log[:100]
         ambiguous_or_failed_changes_log.append({"paragraph_index": current_para_idx, "issue": "XML mapping failed for specific text.", **edit_details_for_log});
         return "XML_MAPPING_FAILED", None
     if first_involved_r_element_for_style is None:
@@ -907,6 +933,9 @@ def replace_text_in_paragraph_with_tracked_change(
     p_child_indices_to_remove = sorted(list(set(item['p_child_idx'] for item in involved_element_infos)), reverse=True)
     if not p_child_indices_to_remove:
         log_debug(f"P{current_para_idx+1}: XML_REMOVAL_ERROR_NO_INDICES. No paragraph child indices identified for removal. This change cannot be applied. For text '{actual_specific_old_text_to_delete}'.")
+        # FIX: Re-capture visible text at time of logging for accurate context
+        current_visible_text_for_log, _ = _build_visible_text_map(paragraph)
+        edit_details_for_log["visible_text_snippet"] = current_visible_text_for_log[:100]
         ambiguous_or_failed_changes_log.append({"paragraph_index": current_para_idx, "issue": "XML_REMOVAL_ERROR_NO_INDICES: No elements to remove.", **edit_details_for_log});
         return "XML_REMOVAL_ERROR_NO_INDICES", None
     insertion_point_xml = p_child_indices_to_remove[-1]
@@ -918,6 +947,9 @@ def replace_text_in_paragraph_with_tracked_change(
         except (IndexError, ValueError) as e_remove:
             log_message = f"P{current_para_idx+1}: XML element removal error at original index {p_idx_to_remove_loop}. Error: {e_remove}. Change aborted for '{actual_specific_old_text_to_delete}'."
             log_debug(log_message)
+            # FIX: Re-capture visible text at time of logging for accurate context
+            current_visible_text_for_log, _ = _build_visible_text_map(paragraph)
+            edit_details_for_log["visible_text_snippet"] = current_visible_text_for_log[:100]
             ambiguous_or_failed_changes_log.append({"paragraph_index": current_para_idx, "issue": f"XML element removal error at index {p_idx_to_remove_loop}: {e_remove}", "type": "CriticalError", **edit_details_for_log})
             return "XML_REMOVAL_ERROR", None
     for i, new_el in enumerate(new_xml_elements_for_paragraph):
@@ -1043,13 +1075,17 @@ def process_document_with_edits(
                     spans_to_markup_this_edit_item.sort(key=lambda x:x["start"], reverse=True)
                     applied_any_markup_for_this_ambiguity = False
                     for span_info in spans_to_markup_this_edit_item:
-                        if _apply_markup_to_span(paragraph_obj, para_idx,
+                        if _apply_markup_to_span(doc, paragraph_obj, para_idx,
                                                span_info["start"], span_info["end"], span_info["text"],
                                                HIGHLIGHT_COLOR_AMBIGUOUS_SKIPPED,
                                                f"Skipped change: Ambiguous context for '{edit_item['specific_old_text']}'. This is one of multiple occurrences. LLM Reason for original change: {edit_item['reason_for_change']}",
                                                author_name, fallback_style_run_for_markup,
                                                ambiguous_or_failed_changes_log, current_edit_details_for_log):
                             applied_any_markup_for_this_ambiguity = True
+                    # FIX: Re-capture visible text at time of logging for accurate context after markup
+                    current_visible_text_for_ambiguous_log, _ = _build_visible_text_map(paragraph_obj)
+                    current_edit_details_for_log["visible_text_snippet"] = current_visible_text_for_ambiguous_log[:100]
+
                     if applied_any_markup_for_this_ambiguity:
                         ambiguous_or_failed_changes_log.append({"paragraph_index":para_idx, "issue": f"CONTEXT_AMBIGUOUS: Marked {len(spans_to_markup_this_edit_item)} instance(s) of '{edit_item['specific_old_text']}' with orange highlight.", "type": "Info", **current_edit_details_for_log})
                     else:

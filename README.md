@@ -152,21 +152,69 @@ Open your browser to `http://localhost:5173` to access the application.
 
 ### Docker Deployment
 
-The application can be deployed using a single Docker container that serves both the SvelteKit static files and the FastAPI backend:
+#### Quick Deployment (Recommended)
+
+Deploy with a single command using the deployment script:
 
 ```bash
-# Build the Docker image
-docker build -f Dockerfile.sveltekit -t word-chatbot:sveltekit .
+# One-command deployment (stops old container, rebuilds, starts on port 3004)
+./deploy.sh
+```
 
-# Run the container
-docker run -d -p 3004:8000 --env-file .env --name word-chatbot word-chatbot:sveltekit
+**Wait ~2-3 minutes for build to complete.**
 
+The script will:
+1. Stop and remove any existing container named `word-chatbot`
+2. Build the Docker image with no cache
+3. Start the container on port 3004
+4. Verify successful deployment
+
+**Access:** `http://localhost:3004`
+
+**Port Conflict?** If you see "port is already allocated", stop the old container first:
+```bash
+# Find container using port 3004
+docker ps -a | grep 3004
+
+# Stop and remove it (replace CONTAINER_NAME with actual name)
+docker stop CONTAINER_NAME && docker rm CONTAINER_NAME
+
+# Then re-run deployment
+./deploy.sh
+```
+
+**Quick commands:**
+```bash
 # View logs
 docker logs -f word-chatbot
 
-# Stop the container
+# Stop container
 docker stop word-chatbot
+
+# Start container
+docker start word-chatbot
+
+# Restart container
+docker restart word-chatbot
 ```
+
+#### Manual Deployment (Alternative)
+
+If you prefer manual control:
+
+```bash
+# Stop and remove old container
+docker stop word-chatbot && docker rm word-chatbot
+
+# Build image (no cache) and start
+docker build --no-cache -f Dockerfile.sveltekit -t word-chatbot:v0.3 . && \
+docker run -d -p 3004:8000 --env-file .env --name word-chatbot --restart unless-stopped word-chatbot:v0.3
+
+# View logs
+docker logs -f word-chatbot
+```
+
+#### Deployment Details
 
 **Key benefits of single-container deployment:**
 - Simplified architecture (no docker-compose needed)
@@ -181,7 +229,9 @@ docker stop word-chatbot
 - Required: AI provider configuration (API keys, endpoints)
 - Optional: `BASE_URL_PATH` for reverse proxy deployment (e.g., `/sageapp04`)
 
-Access the application at `http://localhost:3004` (or configured port).
+**Port mapping:**
+- Internal: Container runs on port 8000
+- External: Mapped to port 3004 (configurable in deploy.sh)
 
 ### Production Deployment
 

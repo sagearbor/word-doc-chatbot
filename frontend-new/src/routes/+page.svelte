@@ -19,10 +19,18 @@
 		DebugOptions,
 		DebugInfo,
 		LLMConfig,
-		FallbackAnalysis
+		FallbackAnalysis,
+		ProcessingProgress
 	} from '$lib/components/features';
 	import { LoadingSpinner, Card, Divider } from '$lib/components/shared';
-	import { appStore, resultsStore, uiStore, validationStore, isValid } from '$lib/stores';
+	import {
+		appStore,
+		resultsStore,
+		uiStore,
+		validationStore,
+		isValid,
+		processingProgressStore
+	} from '$lib/stores';
 	import { toastStore } from '$lib/stores/toast';
 	import {
 		processDocument,
@@ -114,6 +122,7 @@
 		try {
 			appStore.setProcessing(true);
 			resultsStore.clearProcessedResult();
+			processingProgressStore.startProcessing();
 
 			// Map debug level to boolean flags
 			const debugLevel = $uiStore.debugLevel;
@@ -140,9 +149,22 @@
 				result = await processDocument(uploadedFile, $appStore.instructions, options);
 			}
 
+			// Simulate applying phase with progress
+			// In production, this would be driven by backend streaming or WebSocket updates
+			if (result.edits_applied !== undefined && result.edits_applied > 0) {
+				processingProgressStore.startApplying(result.edits_applied);
+				// Simulate gradual progress (in reality, this would come from backend)
+				for (let i = 0; i <= result.edits_applied; i++) {
+					processingProgressStore.updateApplyingProgress(i);
+					await new Promise((resolve) => setTimeout(resolve, 50)); // Small delay for visual effect
+				}
+			}
+
+			processingProgressStore.completeProcessing(result.edits_applied);
 			resultsStore.setProcessedResult(result);
 			toastStore.showToast('Document processed successfully!', 'success');
 		} catch (error: any) {
+			processingProgressStore.reset();
 			toastStore.showToast(`Processing failed: ${error.message}`, 'error');
 			console.error('Processing error:', error);
 		} finally {
@@ -456,11 +478,14 @@
 			{#if $appStore.isProcessing}
 				<div class="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
 					<Card elevated={true} padding="xl">
-						<div class="flex flex-col items-center justify-center py-8">
-							<LoadingSpinner size="lg" message="Processing your document with AI..." />
-							<p class="mt-4 text-sm text-gray-600 dark:text-gray-400 text-center">
-								This may take a minute. We're analyzing the content and generating tracked changes.
-							</p>
+						<div class="py-8">
+							<ProcessingProgress
+								currentStep={$processingProgressStore.currentStep}
+								editsSuggested={$processingProgressStore.editsSuggested}
+								editsApplied={$processingProgressStore.editsApplied}
+								editsTotal={$processingProgressStore.editsTotal}
+								startTime={$processingProgressStore.startTime}
+							/>
 						</div>
 					</Card>
 				</div>
@@ -516,6 +541,7 @@
 									resultsStore.clearAnalysisResult();
 									appStore.setFile(null);
 									appStore.setInstructions('');
+									processingProgressStore.reset();
 								}}
 								class="inline-flex items-center gap-2 px-6 py-3 text-base font-semibold text-blue-700 bg-blue-50 border-2 border-blue-300 rounded-lg hover:bg-blue-100 dark:text-blue-300 dark:bg-blue-900/30 dark:border-blue-700 dark:hover:bg-blue-900/50 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
 							>

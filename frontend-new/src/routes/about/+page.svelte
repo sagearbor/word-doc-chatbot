@@ -7,6 +7,8 @@
 	import { onMount } from 'svelte';
 	import { ArrowLeft, CheckCircle, FileText, Upload, Cog, Download } from 'lucide-svelte';
 	import Card from '$lib/components/shared/Card.svelte';
+	import Navbar from '$lib/components/core/Navbar.svelte';
+	import { base } from '$app/paths';
 
 	let mermaidLoaded = $state(false);
 	let diagramContainer: HTMLElement | undefined;
@@ -83,17 +85,13 @@ graph TB
 	<title>About - Word Document Assistant</title>
 </svelte:head>
 
+<!-- Navbar with Dark Mode Toggle -->
+<Navbar title="Word Document Assistant" />
+
 <div class="min-h-screen bg-gray-50 dark:bg-gray-900">
-	<!-- Header with Back Button -->
+	<!-- Page Header -->
 	<div class="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
 		<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-			<a
-				href="/"
-				class="inline-flex items-center gap-2 text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 font-medium transition-colors mb-4"
-			>
-				<ArrowLeft class="w-5 h-5" />
-				Back to Home
-			</a>
 			<h1 class="text-3xl sm:text-4xl font-bold text-gray-900 dark:text-gray-50 mb-2">
 				About Word Document Assistant
 			</h1>
@@ -116,8 +114,8 @@ graph TB
 				This preserves the document's edit history and allows reviewers to see exactly what changed and why.
 			</p>
 			<p class="text-gray-700 dark:text-gray-300 text-base leading-relaxed">
-				The system supports multiple AI providers (OpenAI, Azure OpenAI, Anthropic, Google) and offers
-				advanced features like fallback document processing, requirements extraction, and detailed debug logging.
+				The system is configured to use a single AI provider (OpenAI, Azure OpenAI, Anthropic, or Google) set by the administrator.
+				It offers advanced features like fallback document processing, requirements extraction, and detailed debug logging.
 			</p>
 		</Card>
 
@@ -167,10 +165,10 @@ graph TB
 					</div>
 					<div>
 						<h3 class="font-semibold text-gray-900 dark:text-gray-50 mb-1">
-							Multi-Provider AI
+							AI Provider Support
 						</h3>
 						<p class="text-sm text-gray-600 dark:text-gray-400">
-							Support for OpenAI, Azure OpenAI, Anthropic Claude, and Google Gemini
+							Supports OpenAI, Azure OpenAI, Anthropic Claude, or Google Gemini (one provider configured by admin)
 						</p>
 					</div>
 				</div>
@@ -277,7 +275,7 @@ graph TB
 					<li><strong>Frontend:</strong> SvelteKit with TypeScript, TailwindCSS, and Skeleton UI</li>
 					<li><strong>Backend:</strong> FastAPI (Python) with async request handling</li>
 					<li><strong>Document Processing:</strong> python-docx with direct XML manipulation for tracked changes</li>
-					<li><strong>AI Integration:</strong> LiteLLM for unified multi-provider support</li>
+					<li><strong>AI Integration:</strong> LiteLLM with configurable provider (single provider per deployment)</li>
 					<li><strong>Deployment:</strong> Single Docker container with SvelteKit adapter-static</li>
 				</ul>
 			</div>

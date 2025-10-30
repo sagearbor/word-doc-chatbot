@@ -77,7 +77,7 @@
 
 <style lang="postcss">
 	.options-panel {
-		@apply p-4 bg-gray-50 border border-gray-200 rounded-lg;
+		@apply p-4 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg;
 	}
 
 	.form-group {
@@ -85,26 +85,27 @@
 	}
 
 	.form-label {
-		@apply block text-sm font-medium text-gray-700;
+		@apply block text-sm font-medium text-gray-700 dark:text-gray-300;
 	}
 
 	.form-input {
-		@apply w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm;
+		@apply w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm;
+		@apply bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100;
 		@apply focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500;
-		@apply text-sm text-gray-900 placeholder-gray-400;
+		@apply text-sm placeholder-gray-400 dark:placeholder-gray-500;
 		@apply transition-colors duration-200;
 	}
 
 	.form-input:hover {
-		@apply border-gray-400;
+		@apply border-gray-400 dark:border-gray-500;
 	}
 
 	.form-help-text {
-		@apply text-xs text-gray-500 mt-1;
+		@apply text-xs text-gray-500 dark:text-gray-400 mt-1;
 	}
 
 	.divider {
-		@apply border-t border-gray-300;
+		@apply border-t border-gray-300 dark:border-gray-600;
 	}
 
 	.checkbox-group {
@@ -112,7 +113,7 @@
 	}
 
 	.form-checkbox {
-		@apply w-4 h-4 mt-0.5 text-blue-600 border-gray-300 rounded;
+		@apply w-4 h-4 mt-0.5 text-blue-600 border-gray-300 dark:border-gray-600 rounded;
 		@apply focus:ring-2 focus:ring-blue-500 focus:ring-offset-0;
 		@apply transition-colors duration-200 cursor-pointer;
 	}
@@ -122,6 +123,6 @@
 	}
 
 	.checkbox-label {
-		@apply flex-1 text-sm text-gray-700 cursor-pointer select-none;
+		@apply flex-1 text-sm text-gray-700 dark:text-gray-300 cursor-pointer select-none;
 	}
 </style>

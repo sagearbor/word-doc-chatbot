@@ -12,9 +12,13 @@
 
 	let { children } = $props();
 
-	// Initialize theme on mount
+	// Initialize theme and log version on mount
 	onMount(() => {
 		theme.init();
+
+		// FIX: Log version to console for deployment verification
+		// This helps identify which version of the app is running at https://aidemo.dcri.duke.edu/sageapp04/
+		console.log('docx redliner bot v0.3');
 	});
 </script>
 
@@ -35,7 +39,7 @@
 	/* Ensure full height layout */
 	:global(html, body) {
 		height: 100%;
-		overflow: hidden;
+		overflow: auto; /* Changed from hidden to auto to allow scrolling on About page */
 	}
 
 	/* Smooth transitions for theme changes */
