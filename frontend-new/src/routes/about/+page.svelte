@@ -10,41 +10,42 @@
 	import Navbar from '$lib/components/core/Navbar.svelte';
 	import { base } from '$app/paths';
 
-	let mermaidLoaded = $state(false);
-	let diagramContainer: HTMLElement | undefined;
+	let diagramSvg = $state('');
+	let diagramError = $state('');
+	let isLoading = $state(true);
 
 	const mermaidCode = `
 graph TB
-    Start([User Uploads DOCX File]) --> Upload[FileUpload Component]
-    Upload --> Validate{File Validation}
-    Validate -->|Invalid| Error[Show Error Toast]
-    Validate -->|Valid| Instructions[User Provides Instructions]
+    Start([User Uploads<br/>DOCX File]) --> Upload[FileUpload<br/>Component]
+    Upload --> Validate{File<br/>Validation}
+    Validate -->|Invalid| Error[Show Error<br/>Toast]
+    Validate -->|Valid| Instructions[User Provides<br/>Instructions]
 
-    Instructions --> CheckFallback{Fallback Mode?}
+    Instructions --> CheckFallback{Fallback<br/>Mode?}
 
-    CheckFallback -->|No Fallback| DirectLLM[Process with LLM]
-    CheckFallback -->|Fallback Document| FallbackChoice{Fallback Type?}
+    CheckFallback -->|No Fallback| DirectLLM[Process<br/>with LLM]
+    CheckFallback -->|Fallback Document| FallbackChoice{Fallback<br/>Type?}
 
-    FallbackChoice -->|Has Tracked Changes| ExtractChanges[Extract TrackedChange Objects]
-    FallbackChoice -->|Requirements Text| ExtractReqs[Extract Requirements]
+    FallbackChoice -->|Has Tracked Changes| ExtractChanges[Extract<br/>TrackedChange<br/>Objects]
+    FallbackChoice -->|Requirements Text| ExtractReqs[Extract<br/>Requirements]
 
-    ExtractChanges --> ApplyDirect[Apply Changes Directly to Main Doc]
-    ExtractReqs --> MergeInstructions[Merge with User Instructions]
+    ExtractChanges --> ApplyDirect[Apply Changes<br/>Directly to<br/>Main Doc]
+    ExtractReqs --> MergeInstructions[Merge with<br/>User Instructions]
     MergeInstructions --> DirectLLM
 
-    DirectLLM --> LLMHandler[LLM Handler with Provider]
-    LLMHandler --> GenerateEdits[Generate Structured JSON Edits]
-    GenerateEdits --> WordProcessor[Word Processor XML Manipulation]
+    DirectLLM --> LLMHandler[LLM Handler<br/>with Provider]
+    LLMHandler --> GenerateEdits[Generate<br/>Structured<br/>JSON Edits]
+    GenerateEdits --> WordProcessor[Word Processor<br/>XML Manipulation]
 
     ApplyDirect --> WordProcessor
 
-    WordProcessor --> BuildTextMap[Build Visible Text Map]
-    BuildTextMap --> ApplyTracked[Apply Tracked Changes to XML]
-    ApplyTracked --> SaveDoc[Save Modified DOCX]
+    WordProcessor --> BuildTextMap[Build Visible<br/>Text Map]
+    BuildTextMap --> ApplyTracked[Apply Tracked<br/>Changes to XML]
+    ApplyTracked --> SaveDoc[Save Modified<br/>DOCX]
 
-    SaveDoc --> Return[Return to Frontend]
-    Return --> Results[Display Results & Download]
-    Results --> Done([User Downloads Processed File])
+    SaveDoc --> Return[Return to<br/>Frontend]
+    Return --> Results[Display Results<br/>& Download]
+    Results --> Done([User Downloads<br/>Processed File])
 
     style Start fill:#e3f2fd
     style Done fill:#c8e6c9
@@ -57,26 +58,40 @@ graph TB
 
 	onMount(async () => {
 		try {
+			console.log('Loading Mermaid...');
 			// Dynamically import mermaid (client-side only)
 			const mermaid = (await import('mermaid')).default;
+			console.log('Mermaid loaded successfully');
 
+			// Initialize Mermaid with configuration
 			mermaid.initialize({
-				startOnLoad: true,
+				startOnLoad: false,
 				theme: 'default',
 				securityLevel: 'loose',
 				fontFamily: 'Inter, system-ui, sans-serif',
-				fontSize: 14
+				fontSize: 13,
+				flowchart: {
+					useMaxWidth: true,
+					htmlLabels: true,
+					curve: 'basis',
+					padding: 15,
+					nodeSpacing: 50,
+					rankSpacing: 50,
+					width: '100%'
+				}
 			});
 
-			mermaidLoaded = true;
-
+			console.log('Rendering Mermaid diagram...');
 			// Render the diagram
-			if (diagramContainer) {
-				const { svg } = await mermaid.render('mermaid-diagram', mermaidCode);
-				diagramContainer.innerHTML = svg;
-			}
+			const { svg } = await mermaid.render('mermaid-diagram', mermaidCode);
+			console.log('Mermaid diagram rendered successfully');
+
+			diagramSvg = svg;
+			isLoading = false;
 		} catch (error) {
-			console.error('Failed to load Mermaid:', error);
+			console.error('Failed to load/render Mermaid:', error);
+			diagramError = error instanceof Error ? error.message : 'Unknown error';
+			isLoading = false;
 		}
 	});
 </script>
@@ -202,15 +217,23 @@ graph TB
 			</p>
 
 			<div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6 overflow-x-auto">
-				{#if !mermaidLoaded}
+				{#if isLoading}
 					<div class="flex items-center justify-center py-12">
 						<div class="text-center">
 							<div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
 							<p class="text-gray-600 dark:text-gray-400">Loading diagram...</p>
 						</div>
 					</div>
-				{:else}
-					<div bind:this={diagramContainer} class="flex justify-center"></div>
+				{:else if diagramError}
+					<div class="text-center py-8">
+						<p class="text-red-600 dark:text-red-400 font-semibold mb-2">Failed to render diagram</p>
+						<p class="text-sm text-gray-500 dark:text-gray-400">{diagramError}</p>
+						<p class="text-xs text-gray-400 dark:text-gray-500 mt-2">Check browser console for details</p>
+					</div>
+				{:else if diagramSvg}
+					<div class="flex justify-center">
+						{@html diagramSvg}
+					</div>
 				{/if}
 			</div>
 		</Card>
